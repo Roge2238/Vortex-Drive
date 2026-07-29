@@ -1,0 +1,10 @@
+主线程(main)
+    │
+    ├── 线程1: recv_thread (网络命令接收)
+    │           从客户端接收命令 → 存入 cmd_queue
+    │
+    ├── 线程2: gst_thread (GStreamer推流)
+    │           摄像头采集 → H.264编码 → UDP推流
+    │
+    └── 线程3: serial_thread (串口发送)
+                从 cmd_queue 取出命令 → 发送到串口

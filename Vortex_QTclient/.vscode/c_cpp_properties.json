@@ -1,0 +1,30 @@
+{
+    "configurations": [
+        {
+            "name": "MinGW-Debug",
+            "compilerPath": "C:/mingw64/mingw64/bin/g++.exe",
+            "intelliSenseMode": "windows-gcc-x64",
+            "cppStandard": "c++17",
+            "cStandard": "c17",
+            "includePath": [
+                "${workspaceFolder}/**",
+            
+                "C:/Qt/6.10.2/mingw_64/include",
+                "C:/Qt/6.10.2/mingw_64/include/QtCore",
+                "C:/Qt/6.10.2/mingw_64/include/QtGui",
+                "C:/Qt/6.10.2/mingw_64/include/QtWidgets",
+                "C:/Users/23585/Desktop/CODE/Tools/mingw_x86_64/include",
+                "C:/Users/23585/Desktop/CODE/Tools/mingw_x86_64/include/gstreamer-1.0",
+                "C:/Users/23585/Desktop/CODE/Tools/mingw_x86_64/include/glib-2.0",
+                "C:/Users/23585/Desktop/CODE/Tools/mingw_x86_64/lib/glib-2.0/include"
+            ],
+            "defines": [
+                "_WIN32",
+                "QT_CORE_LIB",
+                "QT_GUI_LIB",
+                "QT_WIDGETS_LIB"
+            ]
+        }
+    ],
+    "version": 4
+}
