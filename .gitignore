@@ -1,0 +1,47 @@
+# ====================== 编译构建产物（最占空间，必须屏蔽）======================
+build/
+cmake-build-*/
+Debug/
+Release/
+out/
+*.o
+*.obj
+*.elf
+*.hex
+*.bin
+*.map
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+install_manifest.txt
+
+# ====================== VSCode 配置与缓存 ======================
+.vscode/.DS_Store
+.vscode/settings.json
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/tasks.json
+*.code-workspace
+.DS_Store
+.idea/
+
+# ====================== Git 自身锁文件、日志 ======================
+.git/index.lock
+.git/logs/
+
+# ====================== 第三方库、运行库、依赖包 ======================
+lib/
+libs/
+dll/
+*.dll
+*.lib
+*.a
+*.so
+venv/
+node_modules/
+
+# ====================== 系统临时文件 ======================
+Thumbs.db
+*.log
+*.swp
+*~
