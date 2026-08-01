@@ -79,7 +79,7 @@ int main(int argc, char* argv[])
                 p += 2;
                 if(*p == ' ') p++;
             }
-            
+            // 
             if(byte_count == DATA_LEN)
             {
                 std::cout << "发送: ";

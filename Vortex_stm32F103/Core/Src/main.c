@@ -1,3 +1,11 @@
+// 我们需要加入新的功能，比如PID控制 在不破坏开环指令控制的基础上 
+//接收上位机的 error
+// 并根据 error 计算出对应的输出
+// 最后将输出发送给电机控制模块 so 我们先需要确认模式式的切换方式 设置多种协议 
+
+
+
+
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
@@ -13,14 +21,30 @@
 #include "usart.h"
 #include "motor.h"
 #include "cmd.h"
+#include "pid.h"
+#include "mode.h"
 
+#define UART_RX_BUF_LEN 64 
 
 #define CMD_LEN 6
-uint8_t rx_buf[CMD_LEN] = {0};
+
+
+uint8_t cmd_buf[CMD_LEN];
+
+uint8_t uart_buf[UART_BUF_LEN];
+uint16_t rw = 0;
+uint16_t rd = 0;
+
+int16_t error = 0;
+uint16_t area = 0;
+
+uint8_t type = 0;
 
 
 volatile CmdState cmdState = CMD_EMPTY;
 int no_cmd_cnt = 0;
+
+
 
 /* 命令超时检测 - 200ms内必须收到新命令 */
 #define CMD_TIMEOUT_MS  200
@@ -174,3 +198,5 @@ void assert_failed(uint8_t *file, uint32_t line)
 {
 }
 #endif
+
+
