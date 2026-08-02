@@ -2,7 +2,12 @@
 //接收上位机的 error
 // 并根据 error 计算出对应的输出
 // 最后将输出发送给电机控制模块 so 我们先需要确认模式式的切换方式 设置多种协议 
+/*
+TIM1：左轮组正交编码器
+TIM2：右轮组正交编码器
+TIM4： 定时中断，执行测速 + PID 计算（核心调度节拍）+ 4 路 PWM 输出，驱动 4 个电机（左前、左后同 PWM；右前、右后同 PWM）
 
+*/
 
 
 
@@ -30,13 +35,19 @@
 
 
 uint8_t cmd_buf[CMD_LEN];
+uint8_t recv;
+UartBuf_t uart_buf;
+CV_t cv;
+Mode_t mode;
+//改为串级PID控制 
+PID_t pid_left;
+PID_t pid_right;
+PID_t pid_steer;
+PID_t pid_speed;
 
-uint8_t uart_buf[UART_BUF_LEN];
-uint16_t rw = 0;
-uint16_t rd = 0;
+float target_left_pwm = 0.0f;
+float target_right_pwm = 0.0f;
 
-int16_t error = 0;
-uint16_t area = 0;
 
 uint8_t type = 0;
 
@@ -65,7 +76,14 @@ int main(void)
   MX_GPIO_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
-  
+  MX_TIM1_Init();
+
+  // 初始化PID
+  pid_init(&pid_left, 0.0f, 0.0f, 0.0f);
+  pid_init(&pid_right, 0.0f, 0.0f, 0.0f);
+  pid_init(&pid_steer, 0.0f, 0.0f, 0.0f);
+  pid_init(&pid_speed, 0.0f, 0.0f, 0.0f);
+
   
   GPIO_InitTypeDef GPIO_InitStruct = {0};
   __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -91,13 +109,17 @@ int main(void)
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_SET);
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_12, GPIO_PIN_SET);
   
-  // 启动UART中断接收（6字节）
-  HAL_UART_Receive_IT(&huart1, rx_buf, CMD_LEN);
+  // 启动UART中断接收
+  HAL_UART_Receive_IT(&huart1, &recv, 1);
   
   while (1)
   {
     // 主循环：低功耗等待中断
-    __WFI();  // Wait For Interrupt
+    //__WFI();  // Wait For Interrupt
+
+    frame_task();// 两个模式的数据准备完毕 
+
+
   }
 }
 
@@ -108,16 +130,23 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
   {
-    // 构建命令码
+   /*  构建命令码
     uint8_t keycode = build_keycode(rx_buf);
     cmdState = (CmdState)keycode;
     
-    // 重置所有超时计数
+    
     cmd_timeout_cnt = 0;
     no_cmd_cnt = 0;
     
 
-    HAL_UART_Receive_IT(&huart1, rx_buf, CMD_LEN);
+    HAL_UART_Receive_IT(&huart1, rx_buf, CMD_LEN);*/
+
+    push_uart_buf(recv);
+
+
+    HAL_UART_Receive_IT(huart, &recv, 1);
+
+
   }
 }
 
@@ -129,28 +158,66 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   if (huart->Instance == USART1)
   {
     __HAL_UART_CLEAR_OREFLAG(huart);
-    HAL_UART_Receive_IT(huart, rx_buf, CMD_LEN);
+    HAL_UART_Receive_IT(huart, &recv, 1);
   }
 }
 
 /**
   * @brief  TIM4定时中断回调 - 20ms周期
   */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)/// 20ms周期中断用来输出电机 
 {
   if (htim->Instance == TIM4)
   {
     // 命令超时检测：计数一直累加，收到新命令时重置为0
     // 如果有命令且计数达到200ms，说明上位机没有持续发送 → 超时
     cmd_timeout_cnt++;
-    if (cmdState != CMD_EMPTY && cmd_timeout_cnt >= CMD_TIMEOUT_CNT)
+    if(mode == CMD_MODE)
     {
-      cmdState = CMD_EMPTY;  // 超时，命令失效
+
+      if (cmdState != CMD_EMPTY && cmd_timeout_cnt >= CMD_TIMEOUT_CNT)
+      {
+        cmdState = CMD_EMPTY;  // 超时，命令失效
+      }
+      cmd_method(&cmdState)
+
+    }else if (mode == AUTO_MODE)
+    {
+      // 读取编码器脉冲数
+      int32_t left_pulse = HAL_TIM_ReadCounter(&htim1);
+      int32_t right_pulse = HAL_TIM_ReadCounter(&htim2);
+      // 计算实际速度
+      float left_speed = (float)left_pulse / 20.0f;
+      float right_speed = (float)right_pulse / 20.0f;
+
+    
+
+      float steer_out = PID_Compute(&pid_steer,(float)cv.error, 0.033f);
+      float speed_out = PID_Compute(&pid_speed,(float)cv.area, 0.033f);
+      // 目标PWM
+      target_left_pwm = speed_out * 1.0f + steer_out * 0.5f;
+      target_right_pwm = speed_out * 1.0f - steer_out * 0.5f;
+
+      target_left_pwm = HAL_CLAMP(target_left_pwm, -100.0f, 100.0f);
+      target_right_pwm = HAL_CLAMP(target_right_pwm, -100.0f, 100.0f);
+      // 内环PID
+      float left_pwm = PID_Compute(&pid_left, target_left_pwm - left_speed, 0.033f);
+      float right_pwm = PID_Compute(&pid_right, target_right_pwm - right_speed, 0.033f);
+      // 限制PWM范围
+      left_pwm = HAL_CLAMP(left_pwm, -100.0f, 100.0f);
+      right_pwm = HAL_CLAMP(right_pwm, -100.0f, 100.0f);
+
+      // 输出pwm
+      HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_1, left_pwm);
+      HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_2, left_pwm);
+      HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_3, right_pwm);
+      HAL_TIM_SetCompare(&htim2, TIM_CHANNEL_4, right_pwm);
+      
     }
     
     
-    cmd_method(&cmdState);
   }
+   
 }
 
 /**

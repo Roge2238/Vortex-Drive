@@ -8,18 +8,17 @@
 
 #define UART_BUF_LEN 64 
 
-extern uint8_t uart_buf[UART_BUF_LEN];
- 
+
 
 
 typedef enum 
 {
-    CMD = 0,
-    AUTO = 1,
+    MODE_CMD = 0,
+    MODE_AUTO = 1,
 }Mode_t;
 
 
-typedef enum MyEnum
+typedef enum 
 {
     WAIT_AA,
     READ_TYPE,
@@ -27,16 +26,35 @@ typedef enum MyEnum
 
 }RecvState;
 
+
+typedef struct 
+{
+    uint8_t uart_buf[UART_BUF_LEN];
+    int rw;
+    int rd;
+
+}UartBuf_t;
+
+typedef struct
+{
+    uint16_t area;
+    int16_t error;
+
+}CV_t;
+
 uint8_t push_uart_buf(uint8_t);
 
 uint8_t get_uart_buf(uint8_t *data);
 
 void frame_task(void);
 
-void Mode_get(void);
+void cmd_buf_reset();
+
+static void reset_buf();
+
+static void motor_reset();
 
 
+void Mode_switch();
 
-
-
-
+void cmd_buf_reset();

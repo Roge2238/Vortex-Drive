@@ -20,3 +20,5 @@ void PID_Init(PID_t* pid, float kp, float ki, float kd, float integral_limits, f
 float PID_Compute(PID_t* pid , float error, float dt);
 
 void PID_Reset(PID_t* pid);
+
+void pid_method(CV_t* cv);
