@@ -1,4 +1,11 @@
-#include "stm32f1xx_hal.h
+#ifndef __PID_H__
+#define __PID_H__
+
+#include "stm32f1xx_hal.h"
+
+#ifndef HAL_CLAMP
+#define HAL_CLAMP(x, lo, hi) ((x) < (lo) ? (lo) : ((x) > (hi) ? (hi) : (x)))
+#endif
 
 //闭环控制逻辑
 
@@ -21,4 +28,4 @@ float PID_Compute(PID_t* pid , float error, float dt);
 
 void PID_Reset(PID_t* pid);
 
-void pid_method(CV_t* cv);
+#endif /* __PID_H__ */
