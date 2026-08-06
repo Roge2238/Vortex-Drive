@@ -1,20 +1,31 @@
 /*
- * main_test.c — 纯 PID 闭环测试主程序
+ * main_test.c — 串级 PID 闭环控制 (外环视觉 + 内环速度)
  *
- * 功能：只跑 AUTO_MODE，接收 OpenCV 发来的 error/area，
- *       串级 PID 闭环控制左右轮速度。
+ * 功能：接收 OpenCV 发来的 error(横向像素偏移) / area(面积差)，
+ *       外环视觉PID → 期望速度 → 内环速度PID → PWM
  *
  * 帧格式（上位机 → STM32）：
- *   [0xAA] [0x02] [err_lo] [err_hi] [area_lo] [area_hi]
- *   error: int16_t  (小端)
- *   area:  int16_t  (小端，可为负)
+ *   AUTO_TYPE: [0xAA] [0x02] [err_lo] [err_hi] [area_lo] [area_hi]
+ *     error: int16_t 小端  目标偏离画面中心的像素 (+右/-左, 范围±320)
+ *     area:  int16_t 小端  TARGET_AREA - actual_area (+太远/-太近)
+ *   LOST_TYPE: [0xAA] [0x03] ...  目标丢失，自动停车
+ *
+ * 控制结构：
+ *   外环 (20ms): cv.error → pid_steer → steer_out  (转向修正, 普通PID)
+ *                cv.area  → √|area| × K → speed_out (前进速度, 非线性映射)
+ *
+ *    注：距离→速度不使用线性PID，改用 sqrt 曲线实现自然减速，
+ *        避免 大area→高速→刹不住 的过冲问题
+ *
+ *               target_left  = speed_out + steer_out×0.3
+ *               target_right = speed_out - steer_out×0.3
+ *
+ *   内环 (20ms): target → 前馈(PWM预判) + pid_left/right → 增量斜坡 → PWM
  *
  * 硬件：
- *   TIM1 (PA8/PA9)   左轮编码器
- *   TIM3 (PB4/PB5)   右轮编码器
- *   TIM2 (PA0-PA3)   4路PWM
- *   TIM4             20ms定时中断
- *   USART1 (PB6/PB7) 串口接收
+ *   TIM1 (PA8/PA9)   左轮编码器    TIM2 (PA0-PA3)  4路PWM
+ *   TIM3 (PB4/PB5)   右轮编码器    TIM4           20ms中断
+ *   USART1 (PB6/PB7) 串口接收     USART3          VOFA 调试
  */
 
 #include "main.h"
@@ -26,9 +37,57 @@
 #include "mode.h"
 #include "cmd.h"
 #include <string.h>
+#include <stdio.h>
+#include <math.h>    /* sqrtf */
 
-/* 编码器脉冲归一化：150 脉冲/20ms ≈ 400rpm 额定负载，对应 target=100 */
-#define PULSE_MAX  150.0f
+/* 编码器脉冲归一化：2200 脉冲/20ms ≈ 满载，对应 target=100 */
+#define PULSE_MAX  2200.0f
+
+/*
+ * 前馈系数: 根据实测标定 (第二轮)
+ * 实测: 总输出 63 PWM (90 + (-27)) → 稳态速度 57%
+ *       实际关系: 57% ≈ 63 PWM → 1% ≈ 1.1 PWM
+ * 保守取 1.5，让 PID 有 ±20 的修正空间
+ * 
+ * 标定方法: 改完烧录后看 VOFA，target=30 时:
+ *          - left/right_speed 应在 30±3
+ *          - left/right_pid 应在 ±10 以内 (不饱和)
+ *          如果 speed 偏高 → 调小 KV_FORWARD；偏低 → 调大
+ */
+#define KV_FORWARD 1.5f
+
+/* 自适应斜坡: 车速越低，允许的变化速率越小，防止启动冲击 */
+#define RAMP_LOW   8.0f     // 低速时每周期最多变 8% PWM
+#define RAMP_HIGH  20.0f    // 高速时可放松到 20%/周期  亲测有效
+#define SPEED_THRESH 3.0f   // 车速 < 3% 认为尚未脱离静摩擦区
+
+/*
+ * 外环 sqrt 速度映射 (area → 期望速度)
+ *    speed = K_AREA × √|area| × sign(area)
+ *         越靠近目标，减速斜率越大 → 自然减速不冲过头
+ *
+ *   标定表 (K_AREA=0.1, TARGET_AREA=12000):
+ *     | 当前面积 | cv.area | 期望速度 | 行为
+ *     |     5000 |   +7000 |    8.3%  | 快速靠近
+ *     |     8000 |   +4000 |    6.3%  | 中速靠近
+ *     |    10000 |   +2000 |    4.5%  | 减速靠近
+ *     |    11500 |    +500 |    2.2%  | 缓慢逼近
+ *     |    12000 |       0 |      0%  | 停车
+ *     |    12500 |    -500 |   -2.2%  | 缓慢后退
+ *
+ *   调参: 过冲 → 减小 K_AREA (0.1→0.08→0.06)
+ *         太慢 → 增大 K_AREA (0.1→0.15→0.20)
+ */
+#define K_AREA           0.1f   // sqrt 速度系数
+#define MIN_CRUISE_SPEED 2.5f   // 最低巡航速度，低于此值静摩擦可能卡住
+#define AREA_DEADZONE    200.0f // |area| < 200 认为到达目标 (12000±200=11800~12200)
+
+/* 外环开关: 0=只测速度(直行) 1=加入转向(差速) */
+#define STEER_ENABLE 1
+
+/* VOFA 调试发送函数 */
+void Send_To_VOFA(float v1, float v2, float v3, float v4,
+                  float v5, float v6, float v7, float v8);
 
 /* ========== 全局变量 ========== */
 uint8_t cmd_buf[CMD_LEN];
@@ -47,7 +106,7 @@ PID_t pid_speed;
 float target_left_pwm = 0.0f;
 float target_right_pwm = 0.0f;
 
-/* 定义（motor.c 和 mode.c 用 extern 引用这些变量） */
+
 volatile CmdState cmdState = CMD_EMPTY;
 int no_cmd_cnt = 0;
 
@@ -61,18 +120,37 @@ int main(void)
   SystemClock_Config();
 
   MX_USART1_UART_Init();
+  MX_USART3_UART_Init();   /* VOFA 调试串口 */
   MX_GPIO_Init();
   MX_TIM2_Init();
   MX_TIM4_Init();
   MX_TIM1_Init();
   MX_TIM3_Init();
 
-  /* PID 参数 — 降低P，避免过冲 */
-  PID_Init(&pid_left,   0.1f, 0.05f, 0.05f, 500.0f, 100.0f);
-  PID_Init(&pid_right,  0.1f, 0.05f, 0.05f, 500.0f, 100.0f);
-  PID_Init(&pid_steer,  0.2f, 0.0f, 0.1f, 500.0f, 100.0f);
-  PID_Init(&pid_speed,  0.3f, 0.1f, 0.0f, 500.0f, 100.0f);
+  /*
+   * === 内环 PID (速度闭环，已标定，勿动) ===
+   *   kp=1.0, ki=0.5 : 配合前馈 KV=1.5，启动平滑、稳态 ±10%
+   *   integral_limits=100 : 乘 dt 后的积分上限
+   *   output_limit=80 : PID ±80%，与前馈凑满总输出范围
+   */
+  PID_Init(&pid_left,   1.0f, 0.5f, 0.0f, 100.0f, 80.0f);
+  PID_Init(&pid_right,  1.0f, 0.5f, 0.0f, 100.0f, 80.0f);
 
+
+  /*
+   * === 外环 PID (视觉→期望速度) ===
+   *   pid_steer: cv.error(像素) → 转向修正
+   *     kp=0.30: @50px → P=15, steer×0.3=4.5%差速 (原来需要100px)
+   *              @100px → P=30, steer×0.3=9.0%差速
+   *              @200px → P=60, steer×0.3=18.0%差速
+   *     ki=0.05: 快速积分，小误差持续时累积破摩擦力
+   *     kd=0.03: 转向阻尼，不变 (kp大了不需要额外加kd)
+   *
+   *   pid_speed: 不再使用 (被 sqrt 映射替代，保留初始化以备切换)
+   */
+
+  PID_Init(&pid_steer,  0.30f, 0.05f, 0.03f, 200.0f, 100.0f);
+  PID_Init(&pid_speed,  0.005f, 0.002f, 0.0f, 200.0f, 100.0f);
   /* PWM */
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
@@ -118,21 +196,17 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
   }
 }
 
-/* ========== TIM4 20ms 中断 — PID 控制 ========== */
+/* ========== TIM4 20ms 中断 — 串级 PID (外环视觉 → 内环速度) ========== */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance != TIM4)
     return;
 
-  /* 没收到串口数据时，电机停转，防止编码器悬空导致乱跑 */
-  if (!cv_active)
-  {
-    set_drive_pwm(0.0f, 0.0f);
-    return;
-  }
-
-  /* 连接超时检测：50次×20ms = 1秒无数据则停机 */
+  /* 连接超时检测：50次×20ms = 1秒无数据则停机
+   * 收到新数据时 frame_task→cmd_timeout_cnt=0 重置
+   */
   cmd_timeout_cnt++;
+  
   if (cmd_timeout_cnt > 50)
   {
     cv_active = 0;
@@ -144,36 +218,132 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     return;
   }
 
-  /* 读取编码器并清零 */
+  /* ——— 步骤 1：编码器 → 实际速度 ——— */
   int16_t left_pulse  = (int16_t)__HAL_TIM_GET_COUNTER(&htim1);
   int16_t right_pulse = (int16_t)__HAL_TIM_GET_COUNTER(&htim3);
   __HAL_TIM_SET_COUNTER(&htim1, 0);
   __HAL_TIM_SET_COUNTER(&htim3, 0);
+  float left_speed  = (float)(-left_pulse) / PULSE_MAX * 100.0f;
+  float right_speed = (float)right_pulse   / PULSE_MAX * 100.0f;
 
-  /* 归一化编码器脉冲到 ±100，与外环输出量纲对齐 */
-  float left_speed  = (float)left_pulse  / PULSE_MAX * 100.0f;
-  float right_speed = (float)right_pulse / PULSE_MAX * 100.0f;
-  left_speed  = HAL_CLAMP(left_speed,  -100.0f, 100.0f);
-  right_speed = HAL_CLAMP(right_speed, -100.0f, 100.0f);
+  /* ——— 步骤 2：外环 — OpenCV 误差 → 期望速度 ———
+   *   cv.error: 目标偏离画面中心的像素 (+右/-左, 范围 ~±320)
+   *             → pid_steer(PID) → steer_out (转向修正量)
+   *
+   *   cv.area:  TARGET_AREA - actual_area 面积差 (+太远/-太近)
+   *             → √|area| × K_AREA → speed_out (前进速度, 非线性减速)
+   *
+   *   注：距离→速度不用线性PID，因为 area 量级(千) 和 speed(百) 跨度太大，
+   *       线性 P 在远处高速冲、近处刹不住。sqrt 曲线自动让减速斜率随
+   *       距离缩短而增大，是工业级轨迹规划的标准做法。
+   *
+   *   cv_active=0 时外环输出归零 → 平滑停车
+   */
+  float steer_out = 0.0f;
+  float speed_out = 0.0f;
 
-  /* 外环：转向（cv.error）+ 速度（cv.area） */
-  float steer_out = PID_Compute(&pid_steer, (float)cv.error, 0.020f);
-  float speed_out = PID_Compute(&pid_speed, (float)cv.area,  0.020f);
+  if (cv_active)
+  {
+    /* 转向：普通 PID (error 范围小，线性即可) */
+    steer_out = PID_Compute(&pid_steer, (float)cv.error, 0.020f);
 
-  /* 外环输出 → 左右目标速度 */
-  target_left_pwm  = speed_out + steer_out * 0.5f;
-  target_right_pwm = speed_out - steer_out * 0.5f;
-  target_left_pwm  = HAL_CLAMP(target_left_pwm, -100.0f, 100.0f);
+    /* 转向保底：小误差时积分累积慢、P项不够推，
+     *          加一个最小输出防止摩擦力卡死。
+     *   底值 5 → 差速 2×5×0.3=3%，足够打破静摩擦
+     *   error<5px 时不做保底，避免噪声抖动 */
+    #define MIN_STEER_ERROR  5.0f
+    #define MIN_STEER_FLOOR  5.0f
+    if (fabsf((float)cv.error) > MIN_STEER_ERROR) {
+      if (steer_out > 0.0f && steer_out <  MIN_STEER_FLOOR) steer_out =  MIN_STEER_FLOOR;
+      if (steer_out < 0.0f && steer_out > -MIN_STEER_FLOOR) steer_out = -MIN_STEER_FLOOR;
+    }
+
+    /* 距离：sqrt 非线性映射 */
+    float area_abs = fabsf((float)cv.area);
+
+    if (area_abs < AREA_DEADZONE)
+    {
+      speed_out = 0.0f;          // 已到达目标区域，停车
+    }
+    else
+    {
+      speed_out = K_AREA * sqrtf(area_abs);  // √曲线自然减速
+
+      /* 最低巡航：防止速度太低被静摩擦卡住 */
+      if (speed_out < MIN_CRUISE_SPEED)
+        speed_out = MIN_CRUISE_SPEED;
+
+      
+      if (cv.area < 0)
+        speed_out = -speed_out;
+    }
+  }
+
+  /* 速度安全限幅 */
+  #define MAX_FWD_SPEED 15.0f   // 外环最大前进速度 
+  #define MAX_REV_SPEED 10.0f   // 外环最大后退速度
+  speed_out = HAL_CLAMP(speed_out, -MAX_REV_SPEED, MAX_FWD_SPEED);
+
+  /* 差速组合: speed=基础, steer→左右差速 (STEER_ENABLE 控制是否加入) */
+  #define STEER_WEIGHT 0.3f
+  #if STEER_ENABLE
+    target_left_pwm  = speed_out + steer_out * STEER_WEIGHT;
+    target_right_pwm = speed_out - steer_out * STEER_WEIGHT;
+  #else
+    target_left_pwm  = speed_out;   // 只测距离，不转向
+    target_right_pwm = speed_out;
+    (void)steer_out;                // 消除未使用警告
+  #endif
+  target_left_pwm  = HAL_CLAMP(target_left_pwm,  -100.0f, 100.0f);
   target_right_pwm = HAL_CLAMP(target_right_pwm, -100.0f, 100.0f);
 
-  /* 内环：左右轮速度闭环 */
-  float left_pwm  = PID_Compute(&pid_left,  target_left_pwm  - left_speed,  0.020f);
-  float right_pwm = PID_Compute(&pid_right, target_right_pwm - right_speed, 0.020f);
-  left_pwm  = HAL_CLAMP(left_pwm, -100.0f, 100.0f);
-  right_pwm = HAL_CLAMP(right_pwm, -100.0f, 100.0f);
+  /* ——— 内环前馈 ——— */
+  float ff_left  = target_left_pwm  * KV_FORWARD; // KV 可以大一点 充分发挥 PID的补偿
+  float ff_right = target_right_pwm * KV_FORWARD;
 
-  /* 输出 */
-  set_drive_pwm(left_pwm, right_pwm);
+  /* ——— ：内环 PID 补误差 ——— */
+  float left_err   = target_left_pwm  - left_speed;
+  float right_err  = target_right_pwm - right_speed;
+  float left_pid   = PID_Compute(&pid_left,  left_err,  0.020f);
+  float right_pid  = PID_Compute(&pid_right, right_err, 0.020f);
+
+  float raw_left   = ff_left  + left_pid;
+  float raw_right  = ff_right + right_pid;
+
+  /* ——— 自适应斜坡防冲击 ——— */
+  #define SPEED_BAND 15.0f
+  static float cur_left_pwm  = 0.0f;
+  static float cur_right_pwm = 0.0f;
+
+  float avg_speed = (fabsf(left_speed) + fabsf(right_speed)) * 0.5f;
+  float max_delta;
+  if (avg_speed < SPEED_THRESH) {
+    max_delta = RAMP_LOW;
+  } else if (avg_speed < SPEED_BAND) {
+    float t = (avg_speed - SPEED_THRESH) / (SPEED_BAND - SPEED_THRESH);
+    max_delta = RAMP_LOW + (RAMP_HIGH - RAMP_LOW) * t;
+  } else {
+    max_delta = RAMP_HIGH;
+  }
+
+  float dl = raw_left  - cur_left_pwm;
+  float dr = raw_right - cur_right_pwm;
+  dl = HAL_CLAMP(dl, -max_delta, max_delta);
+  dr = HAL_CLAMP(dr, -max_delta, max_delta);
+  cur_left_pwm  += dl;
+  cur_right_pwm += dr;
+
+  /* ———：输出 PWM ——— */
+  set_drive_pwm(cur_left_pwm, cur_right_pwm);
+
+  /* ——— VOFA 调试 ———
+   *   1-2: 编码器脉冲     3-4: cv.error / cv.area (外环输入)
+   *   5-6: steer/speed (外环输出=期望速度)   7-8: 实际速度
+   */
+  Send_To_VOFA((float)left_pulse, (float)right_pulse,
+               (float)cv.error, (float)cv.area,
+               steer_out, speed_out,
+               left_speed, right_speed);
 }
 
 void SystemClock_Config(void)
@@ -203,6 +373,17 @@ void SystemClock_Config(void)
   }
 }
 
+
+/* ========== VOFA 调试发送 — FireWater 格式 ========== */
+void Send_To_VOFA(float v1, float v2, float v3, float v4,
+                  float v5, float v6, float v7, float v8)
+{
+  char buf[128];
+  int len = snprintf(buf, sizeof(buf),
+                     "%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f,%.1f\n",
+                     v1, v2, v3, v4, v5, v6, v7, v8);
+  HAL_UART_Transmit(&huart3, (uint8_t *)buf, len, 10);
+}
 
 /* ========== 错误处理 ========== */
 void Error_Handler(void)
