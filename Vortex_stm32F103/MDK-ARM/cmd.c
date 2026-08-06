@@ -1,6 +1,8 @@
 #include "cmd.h"
 #include "motor.h"
 
+extern int no_cmd_cnt;
+
 uint8_t build_keycode(uint8_t * codebuf)
 {
 	uint8_t code = 0;
@@ -18,6 +20,12 @@ uint8_t build_keycode(uint8_t * codebuf)
 
 void cmd_method(volatile CmdState *key_code)
 {
+    /* 收到有效命令时重置计数器 */
+    if (*key_code != CMD_EMPTY && *key_code != CMD_INVALID && *key_code != 0)
+    {
+        no_cmd_cnt = 0;
+    }
+
     switch (*key_code)
     {
         case CMD_FORWARD:
