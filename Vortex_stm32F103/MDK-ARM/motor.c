@@ -493,3 +493,58 @@ void move_turn_right_boost()
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_RESET);//-> DIN 1
     HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_SET);//-> DIN 2
 }
+
+void set_drive_pwm(float left, float right)
+{
+    /* 限幅 */
+    if(left > 100.0f) left = 100.0f;
+    if(left < -100.0f) left = -100.0f;
+    if(right > 100.0f) right = 100.0f;
+    if(right < -100.0f) right = -100.0f;
+
+    /* 将-100~100映射到PWM寄存器范围0~999 */
+    float abs_left  = (left  >= 0.0f) ? left  : -left;
+    float abs_right = (right >= 0.0f) ? right : -right;
+    uint32_t left_pwm  = (uint32_t)(abs_left  * 9.99f);
+    uint32_t right_pwm = (uint32_t)(abs_right * 9.99f);
+    if(left_pwm > 999) left_pwm = 999;
+    if(right_pwm > 999) right_pwm = 999;
+
+    /* 左侧方向: M1(AIN1/AIN2) + M3(CIN1/CIN2) */
+    if(left >= 0.0f)
+    {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);
+    }
+    else
+    {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);
+    }
+
+    /* 右侧方向: M2(BIN1/BIN2) + M4(DIN1/DIN2) — 右侧电机安装反向 */
+    if(right >= 0.0f)
+    {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+    }
+    else
+    {
+        HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7, GPIO_PIN_RESET);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15, GPIO_PIN_SET);
+        HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+    }
+
+    /* PWM输出: CH1=M1(左前) CH3=M3(左后) CH2=M2(右前) CH4=M4(右后) */
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, left_pwm);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, left_pwm);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, right_pwm);
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, right_pwm);
+}
