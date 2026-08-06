@@ -56,6 +56,9 @@ void move_turn_left_boost();
 
 void move_turn_right_boost();
 
+/* AUTO_MODE 专用：根据浮点PWM值(-100~100)设置方向引脚+PWM占空比 */
+void set_drive_pwm(float left, float right);
+
 
 
 

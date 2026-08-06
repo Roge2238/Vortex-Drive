@@ -1,6 +1,8 @@
 ﻿#include "mode.h"
 #include "cmd.h"
 #include "tim.h"
+#include "pid.h"
+#include "motor.h"
 #include "string.h"
 
 #define SIZE 10
@@ -12,6 +14,10 @@ uint8_t tmp_buf[SIZE];
 int tmp_buf_cnt = 0;
 
 extern volatile CmdState cmdState;
+extern PID_t pid_left;
+extern PID_t pid_right;
+extern PID_t pid_steer;
+extern PID_t pid_speed;
 
 
 //实现环形缓冲区 暂存消息 串口中断使用
@@ -82,9 +88,9 @@ void frame_task(void)
 
     case READ_TYPE:
         type = tmp;
-        if(type != CMD_TYPE && type != AUTO_TYPE)
+        if(type != CMD_TYPE && type != AUTO_TYPE && type != LOST_TYPE)
         {
-            /* 未知帧类型，丢弃并回到等待头 */
+
             state = WAIT_AA;
             break;
         }
@@ -93,7 +99,7 @@ void frame_task(void)
         {
             mode = MODE_CMD;
         }
-        else if(type == AUTO_TYPE)
+        else if(type == AUTO_TYPE || type == LOST_TYPE)
         {
             mode = MODE_AUTO;
         }
@@ -114,7 +120,7 @@ void frame_task(void)
         break;
 
     case READ_DATA:
-        /* 防越界：未知 type 或计数超过 SIZE 上限，丢弃整帧 */
+        /* 防越界：丢弃整帧 */
         if(tmp_buf_cnt >= SIZE)
         {
             state = WAIT_AA;
@@ -138,6 +144,21 @@ void frame_task(void)
             cv.area = *(int16_t*)&tmp_buf[2];
             cv_active = 1;          /* 标记：已收到有效数据，PID可以开始跑 */
             cmd_timeout_cnt = 0;    /* 重置超时计数 */
+            tmp_buf_cnt = 0;
+            state = WAIT_AA;
+        }
+        else if(type == LOST_TYPE && tmp_buf_cnt == AUTO_LEN)
+        {
+            /* 目标丢失：清零 cv + 清PID积分 + 停车 */
+            cv.error = 0;
+            cv.area = 0;
+            cv_active = 0;          /* 关闭PID输出，TIM4中断会直接停车 */
+            cmd_timeout_cnt = 0;    /* 仍重置超时，因为串口链路正常 */
+            PID_Reset(&pid_left);
+            PID_Reset(&pid_right);
+            PID_Reset(&pid_steer);
+            PID_Reset(&pid_speed);
+            set_drive_pwm(0.0f, 0.0f);
             tmp_buf_cnt = 0;
             state = WAIT_AA;
         }
