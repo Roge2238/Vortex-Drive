@@ -10,6 +10,8 @@ void PID_Init(PID_t* pid, float kp, float ki, float kd, float integral_limits, f
     pid->output_limit = output_limit;
     pid->last_error = 0.0f;
     pid->integral = 0.0f;
+    pid->d_alpha = 0.3f;   /* D项低通滤波系数，越小越平滑 */
+    pid->last_d = 0.0f;
 }
 
 
@@ -19,6 +21,7 @@ void PID_Reset(PID_t* pid)
 {
     pid->last_error = 0.0f;
     pid->integral = 0.0f;
+    pid->last_d = 0.0f;
 }
 
 
@@ -54,8 +57,11 @@ float PID_Compute(PID_t* pid, float error, float dt)
     }
     float i = pid->ki * pid->integral;
 
-    //  D — 微分项 
-    float d = pid->kd * (error - pid->last_error) / dt;
+    //  D — 微分项
+    //  filtered_d = d_alpha × raw_d + (1 - d_alpha) × last_d
+    float raw_d = pid->kd * (error - pid->last_error) / dt;
+    pid->last_d = pid->d_alpha * raw_d + (1.0f - pid->d_alpha) * pid->last_d;
+    float d = pid->last_d;
 
     pid->last_error = error;
 

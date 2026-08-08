@@ -18,6 +18,8 @@ typedef struct
     float integral;// 累积积分值
     float integral_limits;//积分限幅
     float output_limit;// 输出限制
+    float d_alpha;  // D项低通滤波系数，默认0.3
+    float last_d;   // 上一次滤波后的D项值
 
 } PID_t;
 
