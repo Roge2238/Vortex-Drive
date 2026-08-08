@@ -19,7 +19,8 @@
 #include <array>
 #include <chrono>
 
-#define DATA_LEN 6
+//[0xAA][type][data]
+#define DATA_LEN 8
 using CmdPacket = std::array<uint8_t, DATA_LEN>;
 
 extern std::atomic<bool> go_running;

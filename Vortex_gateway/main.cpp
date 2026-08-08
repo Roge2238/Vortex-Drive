@@ -17,9 +17,7 @@
 
 using namespace std;
 
-#define DATA_LEN 6
 
-using CmdPacket = std::array<uint8_t, DATA_LEN>;
 
 // 最新命令存储
 mutex cmd_mtx;
