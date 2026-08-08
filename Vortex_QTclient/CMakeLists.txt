@@ -16,6 +16,7 @@ qt_add_executable(Vortex_QTclient
     main.cpp
     mainwindow.h mainwindow.cpp
     videoplayer.h videoplayer.cpp
+    cmdclient.h cmdclient.cpp
 )
 
 target_include_directories(Vortex_QTclient PRIVATE
