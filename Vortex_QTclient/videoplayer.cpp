@@ -3,11 +3,16 @@
 #include <QDebug>
 #include <QMessageBox>
 
-static GstFlowReturn onNewSample(GstAppSink* sink, gpointer userData)
+GstFlowReturn VideoPlayer::onNewSample(GstAppSink* sink, gpointer userData)
 {
     VideoPlayer* player = static_cast<VideoPlayer*>(userData);
     GstSample* sample = gst_app_sink_pull_sample(sink);
     if (!sample) return GST_FLOW_OK;
+
+    //确认收到并解码出帧
+    player->m_frameCount++;
+    if (player->m_frameCount == 1 || player->m_frameCount % 150 == 0)
+        emit player->diagnosticLog(QString("已解码视频帧: %1").arg(player->m_frameCount));
 
     GstBuffer* buf = gst_sample_get_buffer(sample);
     GstCaps* caps = gst_sample_get_caps(sample);
