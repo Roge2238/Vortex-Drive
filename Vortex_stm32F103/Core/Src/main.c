@@ -71,6 +71,10 @@
 #define CMD_TIMEOUT_MS  200
 #define CMD_TIMEOUT_CNT (CMD_TIMEOUT_MS / 20)
 
+/* AUTO 断链保护 - 1秒无帧则停车 */
+#define AUTO_TIMEOUT_MS  1000
+#define AUTO_TIMEOUT_CNT (AUTO_TIMEOUT_MS / 20)
+
 /* VOFA 调试发送函数 */
 void Send_To_VOFA(float v1, float v2, float v3, float v4,
                   float v5, float v6, float v7, float v8);
@@ -100,6 +104,7 @@ volatile uint8_t cmd_timeout_cnt = 0;
 volatile uint8_t cv_active = 0;          // 收到首个AUTO帧后置1 
 float cur_left_pwm  = 0.0f;
 float cur_right_pwm = 0.0f;
+
 /* ========== 主函数 ========== */
 int main(void)
 {
@@ -193,17 +198,20 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
    * 收到新数据时 frame_task→cmd_timeout_cnt=0 重置
    */
   cmd_timeout_cnt++;
-  
-  // if (cmd_timeout_cnt > 50)
-  // {
-  //   cv_active = 0;
-  //   PID_Reset(&pid_left);
-  //   PID_Reset(&pid_right);
-  //   PID_Reset(&pid_steer);
-  //   PID_Reset(&pid_speed);
-  //   set_drive_pwm(0.0f, 0.0f);
-  //   return;
-  // }
+
+  /* AUTO 模式断链保护：视觉链路1秒无帧 → 清积分停车*/
+  if (mode == MODE_AUTO && cv_active && cmd_timeout_cnt > AUTO_TIMEOUT_CNT)
+  {
+    cv_active = 0;
+    cur_left_pwm = 0.0f;
+    cur_right_pwm = 0.0f;
+    PID_Reset(&pid_left);
+    PID_Reset(&pid_right);
+    PID_Reset(&pid_steer);
+    PID_Reset(&pid_speed);
+    set_drive_pwm(0.0f, 0.0f);
+    return;
+  }
   if (mode == MODE_CMD)
   {
      if(cmd_timeout_cnt >= CMD_TIMEOUT_CNT)
