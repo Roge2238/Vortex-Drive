@@ -64,11 +64,11 @@ void move_back()
 
 void move_forward_left()
 {
-    //M1 M3 快
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BASE_SPEED);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BASE_SPEED);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
+    // M1 M3 慢，M2 M4 快 → 左转 (左慢右快)
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BASE_SPEED);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BASE_SPEED);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
@@ -89,11 +89,11 @@ void move_forward_left()
 
 void move_forward_right()
 {
-    //M2 M4 快
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BASE_SPEED);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BASE_SPEED);//M4
+    // M2 M4 慢，M1 M3 快 → 右转 (左快右慢)
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BASE_SPEED);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BASE_SPEED);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
@@ -114,11 +114,11 @@ void move_forward_right()
 
 void move_back_left()
 {
-    //M1 M3 快
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BASE_SPEED);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BASE_SPEED);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
+    // 左慢右快 → 后退左转
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BASE_SPEED);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BASE_SPEED);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
@@ -139,11 +139,11 @@ void move_back_left()
 
 void move_back_right()
 {
-    //M2 M4 快
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BASE_SPEED);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BASE_SPEED);//M4
+    // 左快右慢 → 后退右转
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BASE_SPEED);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BASE_SPEED);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
@@ -280,10 +280,11 @@ void move_slide()
 
 void move_forward_left_boost()
 {
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BOOST_SPEED);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BOOST_SPEED);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
+    // 左慢右快 → 物理左转
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BOOST_SPEED);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BOOST_SPEED);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
@@ -304,10 +305,11 @@ void move_forward_left_boost()
 
 void move_forward_right_boost()
 {
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BOOST_SPEED);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BOOST_SPEED);//M4
+    // 左快右慢 → 物理右转
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BOOST_SPEED);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BOOST_SPEED);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
@@ -328,10 +330,11 @@ void move_forward_right_boost()
 
 void move_back_left_boost()
 {
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BOOST_SPEED);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BOOST_SPEED);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
+    // 左慢右快 → 后退物理左转
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BOOST_SPEED);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BOOST_SPEED);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
@@ -352,10 +355,11 @@ void move_back_left_boost()
 
 void move_back_right_boost()
 {
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_OFFSET);//M1
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_BOOST_SPEED);//M2
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_OFFSET);//M3
-    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_BOOST_SPEED);//M4
+    // 左快右慢 → 后退物理右转
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, PWM_BOOST_SPEED);//M1
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, PWM_OFFSET);//M2
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_BOOST_SPEED);//M3
+    __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_OFFSET);//M4
 
     //M1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
@@ -405,21 +409,21 @@ void move_turn_left()
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_TURN_SPEED);//M3
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_TURN_SPEED);//M4
 
-    //M1 (左前轮向前)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_RESET);//-> AIN 2
+    //M1 (左前轮向后 → 左转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_SET);//-> AIN 2
 
-    //M2 (右前轮向后，因安装反向，需给正向信号)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_SET);//-> BIN 1
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_RESET);//-> BIN 2 (原PB2改为PA7)
+    //M2 (右前轮向前，因安装反向，需给反向信号 → 左转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_RESET);//-> BIN 1
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_SET);//-> BIN 2 (原PB2改为PA7)
 
-    //M3 (左后轮向前)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);//-> CIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);//-> CIN 2
+    //M3 (左后轮向后 → 左转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);//-> CIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);//-> CIN 2
 
-    //M4 (右后轮向后，因安装反向，需给正向信号)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_SET);//-> DIN 1
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_RESET);//-> DIN 2
+    //M4 (右后轮向前，因安装反向，需给反向信号 → 左转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_RESET);//-> DIN 1
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_SET);//-> DIN 2
 }
 
 void move_turn_right()
@@ -429,21 +433,21 @@ void move_turn_right()
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_TURN_SPEED);//M3
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_TURN_SPEED);//M4
 
-    //M1 (左前轮向后)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_SET);//-> AIN 2
+    //M1 (左前轮向前 → 右转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_RESET);//-> AIN 2
 
-    //M2 (右前轮向前，因安装反向，需给反向信号)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_RESET);//-> BIN 1
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_SET);//-> BIN 2 (原PB2改为PA7)
+    //M2 (右前轮向后，因安装反向，需给正向信号 → 右转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_SET);//-> BIN 1
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_RESET);//-> BIN 2 (原PB2改为PA7)
 
-    //M3 (左后轮向后)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);//-> CIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);//-> CIN 2
+    //M3 (左后轮向前 → 右转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);//-> CIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);//-> CIN 2
 
-    //M4 (右后轮向前，因安装反向，需给反向信号)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_RESET);//-> DIN 1
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_SET);//-> DIN 2
+    //M4 (右后轮向后，因安装反向，需给正向信号 → 右转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_SET);//-> DIN 1
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_RESET);//-> DIN 2
 }
 
 void move_turn_left_boost()
@@ -453,21 +457,21 @@ void move_turn_left_boost()
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_TURN_BOOST_SPEED);//M3
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_TURN_BOOST_SPEED);//M4
 
-    //M1 (左前轮向前)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_RESET);//-> AIN 2
+    //M1 (左前轮向后 → 左转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_SET);//-> AIN 2
 
-    //M2 (右前轮向后，因安装反向，需给正向信号)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_SET);//-> BIN 1
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_RESET);//-> BIN 2 (原PB2改为PA7)
+    //M2 (右前轮向前，因安装反向，需给反向信号 → 左转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_RESET);//-> BIN 1
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_SET);//-> BIN 2 (原PB2改为PA7)
 
-    //M3 (左后轮向前)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);//-> CIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);//-> CIN 2
+    //M3 (左后轮向后 → 左转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);//-> CIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);//-> CIN 2
 
-    //M4 (右后轮向后，因安装反向，需给正向信号)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_SET);//-> DIN 1
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_RESET);//-> DIN 2
+    //M4 (右后轮向前，因安装反向，需给反向信号 → 左转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_RESET);//-> DIN 1
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_SET);//-> DIN 2
 }
 
 void move_turn_right_boost()
@@ -477,21 +481,21 @@ void move_turn_right_boost()
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_3, PWM_TURN_BOOST_SPEED);//M3
     __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_4, PWM_TURN_BOOST_SPEED);//M4
 
-    //M1 (左前轮向后)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_RESET);//-> AIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_SET);//-> AIN 2
+    //M1 (左前轮向前 → 右转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5 , GPIO_PIN_SET);//-> AIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0 , GPIO_PIN_RESET);//-> AIN 2
 
-    //M2 (右前轮向前，因安装反向，需给反向信号)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_RESET);//-> BIN 1
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_SET);//-> BIN 2 (原PB2改为PA7)
+    //M2 (右前轮向后，因安装反向，需给正向信号 → 右转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_1 , GPIO_PIN_SET);//-> BIN 1
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_7 , GPIO_PIN_RESET);//-> BIN 2 (原PB2改为PA7)
 
-    //M3 (左后轮向后)
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);//-> CIN 1
-    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);//-> CIN 2
+    //M3 (左后轮向前 → 右转)
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);//-> CIN 1
+    HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_RESET);//-> CIN 2
 
-    //M4 (右后轮向前，因安装反向，需给反向信号)
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_RESET);//-> DIN 1
-    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_SET);//-> DIN 2
+    //M4 (右后轮向后，因安装反向，需给正向信号 → 右转)
+    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_15 , GPIO_PIN_SET);//-> DIN 1
+    HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13 , GPIO_PIN_RESET);//-> DIN 2
 }
 
 void set_drive_pwm(float left, float right)
