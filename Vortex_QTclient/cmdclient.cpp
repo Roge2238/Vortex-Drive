@@ -1,5 +1,7 @@
 #include "cmdclient.h"
 
+#include <QNetworkProxy>
+
 namespace {
 
 /* 协议常量，与 STM32 mode.h 一致 */
@@ -20,7 +22,9 @@ CmdClient::CmdClient(QObject *parent)
     : QObject(parent)
 {
     m_socket = new QTcpSocket(this);
-    // 禁用 Nagle，保证小包立即发送（低延迟，指令响应优先）
+    // 局域网直连：绕过系统代理，否则连内网IP会报 "proxy type is invalid"
+    m_socket->setProxy(QNetworkProxy::NoProxy);
+    
     m_socket->setSocketOption(QTcpSocket::LowDelayOption, 1);
     m_socket->setSocketOption(QTcpSocket::KeepAliveOption, 1);
 

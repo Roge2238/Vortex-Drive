@@ -50,7 +50,7 @@ void MainWindow::initUi()
     // 控制栏：地址 / 播放 / 摄像头 / 模式 / 设备列表
     QHBoxLayout *ctrlLayout = new QHBoxLayout();
 
-    m_urlEdit = new QLineEdit("udp://192.168.43.95:8650", this);
+    m_urlEdit = new QLineEdit("udp://192.168.43.20:8650", this);
     ctrlLayout->addWidget(m_urlEdit);
 
     m_playBtn = new QPushButton("播放", this);
@@ -113,6 +113,7 @@ void MainWindow::initConnections()
         QMessageBox::warning(this, "播放错误", msg);
         m_videoLabel->setText("播放失败，请检查网络连接");
     });
+    connect(m_video, &VideoPlayer::diagnosticLog, this, &MainWindow::appendLog);
 
     connect(m_playBtn,   &QPushButton::clicked, this, &MainWindow::onPlayClicked);
     connect(m_cameraBtn, &QPushButton::clicked, this, &MainWindow::onCameraClicked);
