@@ -18,6 +18,8 @@ extern PID_t pid_left;
 extern PID_t pid_right;
 extern PID_t pid_steer;
 extern PID_t pid_speed;
+extern float cur_left_pwm;
+extern float cur_right_pwm;
 
 
 //实现环形缓冲区 暂存消息 串口中断使用
