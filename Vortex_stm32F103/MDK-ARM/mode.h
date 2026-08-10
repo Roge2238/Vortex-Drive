@@ -34,15 +34,15 @@ typedef enum
 typedef struct
 {
     uint8_t uart_buf[UART_BUF_LEN];
-    int rw;
-    int rd;
+    volatile int rw;   
+    volatile int rd;
 
 }UartBuf_t;
 
 typedef struct
 {
-    int16_t area;   /* 实际是 area error = TARGET_AREA - actual_area，可为负 */
-    int16_t error;
+    volatile int16_t area;
+    volatile int16_t error;
 
 }CV_t;
 

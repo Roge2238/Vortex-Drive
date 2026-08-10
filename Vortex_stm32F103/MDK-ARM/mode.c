@@ -68,6 +68,15 @@ void Mode_switch(void)
     cmd_buf_reset();
     motor_reset();
     reset_buf();
+    /* 清残留控制状态，防止切回后第一拍用旧值驱动电机 */
+    cmdState = CMD_EMPTY;
+    cv_active = 0;
+    cur_left_pwm = 0.0f;
+    cur_right_pwm = 0.0f;
+    PID_Reset(&pid_left);
+    PID_Reset(&pid_right);
+    PID_Reset(&pid_steer);
+    PID_Reset(&pid_speed);
     HAL_Delay(25);
 }
 
@@ -140,8 +149,9 @@ void frame_task(void)
         }
         else if(type == AUTO_TYPE && tmp_buf_cnt == AUTO_LEN)
         {
-            cv.error = *(int16_t*)&tmp_buf[0];
-            cv.area = *(int16_t*)&tmp_buf[2];
+            
+            cv.error = (int16_t)((uint16_t)tmp_buf[0] | ((uint16_t)tmp_buf[1] << 8));
+            cv.area  = (int16_t)((uint16_t)tmp_buf[2] | ((uint16_t)tmp_buf[3] << 8));
             cv_active = 1;          /* 标记：已收到有效数据，PID可以开始跑 */
             cmd_timeout_cnt = 0;    /* 重置超时计数 */
             tmp_buf_cnt = 0;
@@ -154,6 +164,8 @@ void frame_task(void)
             cv.area = 0;
             cv_active = 0;          /* 关闭PID输出，TIM4中断会直接停车 */
             cmd_timeout_cnt = 0;    /* 仍重置超时，因为串口链路正常 */
+            cur_left_pwm = 0.0f;    /* 斜坡状态清零：否则下一拍会用残留PWM重新驱动电机 */
+            cur_right_pwm = 0.0f;
             PID_Reset(&pid_left);
             PID_Reset(&pid_right);
             PID_Reset(&pid_steer);
