@@ -1,6 +1,6 @@
 #include "server.h"
-
-
+#include "gst_task.h"
+#include <unistd.h>
 
 void error_die(const char* msg)
 {
@@ -8,78 +8,123 @@ void error_die(const char* msg)
     exit(1);
 }
 
-
-int startup(u_short* port)  
+int startup(u_short* port)
 {
-
     int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
     struct sockaddr_in name;
     memset(&name, 0, sizeof(name));
     name.sin_family = AF_INET;
-    name.sin_port = htons(*port);  
+    name.sin_port = htons(*port);
     name.sin_addr.s_addr = htonl(INADDR_ANY);
-    
+
     int on = 1;
-    if(setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
+    if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)) < 0)
     {
-        error_die("setsockopt");  
+        error_die("setsockopt");
     }
-    
-    if (bind(listen_fd, (struct sockaddr*)&name, sizeof(name)) < 0) {
+
+    if (bind(listen_fd, (struct sockaddr*)&name, sizeof(name)) < 0)
+    {
         error_die("bind");
     }
-    
-    if (*port == 0) {
+
+    if (*port == 0)
+    {
         socklen_t namelen = sizeof(name);
         if (getsockname(listen_fd, (struct sockaddr*)&name, &namelen) < 0)
         {
-            error_die("getsockname");  
+            error_die("getsockname");
         }
-        *port = ntohs(name.sin_port);  
+        *port = ntohs(name.sin_port);
     }
-    
-    if (listen(listen_fd, 5) < 0) {
+
+    if (listen(listen_fd, 5) < 0)
+    {
         error_die("listen");
     }
-    
+
     return listen_fd;
 }
 
-
-
-ssize_t recv_data(int fd, uint8_t* buf, int len)
-{
-    int received = 0;
-    while(received < len)
-    {
-        int n = read(fd, buf + received, len - received);
-        if(n <= 0) 
-        {
-            if(n < 0) perror("recv error");
-            return -1;
-        }
-        received += n;
-    }
-    return 0;
-}
-
-
+/*
+ * 帧解析状态机 对应mode.c：
+ *   [0xAA][0x01][6字节按键]          手动指令帧（8字节）
+ *   [0xAA][0x02][err_lo][err_hi][area_lo][area_hi]  自动/模式切换帧（6字节）
+ *   [0xAA][0x03][0,0,0,0]            丢失帧（6字节）
+ *
+ * 
+ */
 void recv_cmd(int fd)
 {
-    uint8_t buf[DATA_LEN];
-    while(go_running)
+    enum { WAIT_AA, READ_TYPE, READ_DATA } state = WAIT_AA;
+    uint8_t type = 0;
+    uint8_t data_len = 0;
+    uint8_t fill = 0;
+    uint8_t frame[MAX_PACKET_LEN];
+
+    while (go_running.load())
     {
-        if(recv_data(fd, buf, DATA_LEN) < 0)
+        uint8_t b;
+        ssize_t n = read(fd, &b, 1);
+        if (n <= 0)
         {
+            if (n < 0)
+                perror("recv error");
             go_running.store(false);
             break;
         }
-        // 接存储最新命令，丢弃旧命令
-        std::lock_guard<std::mutex> lock(cmd_mtx);
-        std::memcpy(latest_cmd.data(), buf, DATA_LEN);
-        cmd_updated.store(true);
-        cmd_received.store(true);  // 标记已收到有效命令
+
+        switch (state)
+        {
+        case WAIT_AA:
+            if (b == 0xAA)
+            {
+                frame[0] = b;
+                state = READ_TYPE;
+            }
+            break;
+
+        case READ_TYPE:
+            type = b;
+            if (type == 0x01)
+                data_len = 6;
+            else if (type == 0x02 || type == 0x03)
+                data_len = 4;
+            else
+            {
+                state = WAIT_AA;   // 未知类型，丢弃重同步
+                break;
+            }
+            frame[1] = b;
+            fill = 0;
+            state = READ_DATA;
+            break;
+
+        case READ_DATA:
+            frame[2 + fill++] = b;
+            if (fill == data_len)
+            {
+                {
+                    std::lock_guard<std::mutex> lock(cmd_mtx);
+                    std::memcpy(latest_cmd.data(), frame, MAX_PACKET_LEN);
+                    latest_cmd_len = 2 + data_len;
+                }
+                cmd_updated.store(true);
+                cmd_received.store(true);
+
+                if (type == 0x01)
+                {
+                    track_mode.store(false);   
+                    auto_mode.store(false);    
+                }
+                else
+                {
+                    track_mode.store(true);    
+                    auto_mode.store(true);     
+                }
+                state = WAIT_AA;
+            }
+            break;
+        }
     }
 }
-
-

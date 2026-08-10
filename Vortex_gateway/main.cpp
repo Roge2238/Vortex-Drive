@@ -13,21 +13,21 @@
 
 #include "serial_task.h"
 #include "server.h"
-#include "gst_loop.h"
+#include "gst_task.h"
 
 using namespace std;
-
-
 
 // 最新命令存储
 mutex cmd_mtx;
 CmdPacket latest_cmd{};
+uint8_t latest_cmd_len = 0;     // 实际帧长（CMD=8, AUTO/LOST=6）
 atomic<bool> cmd_updated(false);
 atomic<bool> cmd_received(false);  // 启动时为false，收到第一个命令后变true
 
+atomic<bool> auto_mode(false);   // false=手动 true=自动
 atomic<bool> go_running(false);
 
-// 信号处理函数，优雅退出
+// 信号处理函数
 void signal_handler(int sig)
 {
     go_running.store(false);
@@ -60,7 +60,7 @@ int main(int argc, char* argv[])
     // ===== 测试模式 =====
     if(argc == 2 && strcmp(argv[1], "--test") == 0)
     {
-        std::cout << "进入串口测试模式，输入6字节十六进制命令 (如: 010203040506):\n";
+        std::cout << "进入串口测试模式，输入8字节十六进制整帧 (如: AA01010000000000):\n";
         char input[64];
         while(true)
         {
@@ -121,7 +121,7 @@ int main(int argc, char* argv[])
     thread recv_thread(recv_cmd, client_fd);
     std::cout << "网络命令接收线程启动\n";
 
-    thread gst_thread(gst_udp_stream);
+    thread gst_thread(gst_task);
     std::cout << "GStreamer推流线程启动\n";
 
     thread serial_thread(serial_send_thread, urt_fd);
@@ -129,16 +129,15 @@ int main(int argc, char* argv[])
 
 
     std::cout << "所有线程启动完成，按 Ctrl+C 退出\n";
-    
+
     recv_thread.join();
     std::cout << "网络命令接收线程已退出\n";
-    
+
     gst_thread.join();
     std::cout << "GStreamer推流线程已退出\n";
-    
+
     serial_thread.join();
     std::cout << "串口发送线程已退出\n";
-
 
     close(client_fd);
     close(server_fd);
