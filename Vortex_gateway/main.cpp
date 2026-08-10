@@ -2,6 +2,7 @@
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
+#include <cerrno>
 #include <thread>
 #include <stdio.h>
 #include <iostream>
@@ -38,8 +39,14 @@ void signal_handler(int sig)
 
 int main(int argc, char* argv[])
 {
-    signal(SIGINT, signal_handler);
-    signal(SIGTERM, signal_handler);
+    // 收到信号后返回 EINTR，各线程才能醒过来检查 go_running 并退出
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;
+    sigaction(SIGINT, &sa, nullptr);
+    sigaction(SIGTERM, &sa, nullptr);
 
     // 初始化串口
     int urt_fd = open("/dev/ttyAMA0", O_RDWR | O_NOCTTY);
@@ -101,6 +108,14 @@ int main(int argc, char* argv[])
     socklen_t cli_len = sizeof(client_addr);
 
     int client_fd = accept(server_fd, (sockaddr*)&client_addr, &cli_len);
+    if (client_fd < 0 && errno == EINTR)
+    {
+        
+        std::cout << "在等待客户端时收到退出信号，退出\n";
+        close(server_fd);
+        close(urt_fd);
+        return 0;
+    }
     if (client_fd < 0)
     {
         error_die("accept失败");

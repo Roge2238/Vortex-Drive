@@ -1,6 +1,10 @@
 #include "server.h"
 #include "gst_task.h"
+#include <cerrno>
+#include <fcntl.h>
 #include <unistd.h>
+#include <chrono>
+#include <thread>
 
 void error_die(const char* msg)
 {
@@ -62,14 +66,36 @@ void recv_cmd(int fd)
     uint8_t fill = 0;
     uint8_t frame[MAX_PACKET_LEN];
 
+    // 将 socket 设为非阻塞
+    int fl = fcntl(fd, F_GETFL, 0);
+    if (fl >= 0)
+        fcntl(fd, F_SETFL, fl | O_NONBLOCK);
+
     while (go_running.load())
     {
         uint8_t b;
         ssize_t n = read(fd, &b, 1);
         if (n <= 0)
         {
-            if (n < 0)
-                perror("recv error");
+            // EAGAIN/EWOULDBLOCK：无数据可读，短暂睡眠后重新检查退出标志
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
+            if (n == 0)
+            {
+                // 客户端正常断开
+                go_running.store(false);
+                break;
+            }
+            if (n < 0 && errno == EINTR)
+            {
+                if (!go_running.load())
+                    break;
+                continue;
+            }
+            perror("recv error");
             go_running.store(false);
             break;
         }
