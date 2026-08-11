@@ -33,4 +33,9 @@ vortex_stm32f103\main.o: ../Core/Inc/tim.h
 vortex_stm32f103\main.o: ../Core/Inc/gpio.h
 vortex_stm32f103\main.o: ../Core/Inc/usart.h
 vortex_stm32f103\main.o: ../MDK-ARM/motor.h
+vortex_stm32f103\main.o: ../MDK-ARM/pid.h
+vortex_stm32f103\main.o: ../MDK-ARM/mode.h
 vortex_stm32f103\main.o: ../MDK-ARM/cmd.h
+vortex_stm32f103\main.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+vortex_stm32f103\main.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdio.h
+vortex_stm32f103\main.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\math.h

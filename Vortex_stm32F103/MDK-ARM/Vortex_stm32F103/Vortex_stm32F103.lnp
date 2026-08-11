@@ -10,6 +10,8 @@
 "vortex_stm32f103\dma.o"
 "vortex_stm32f103\stm32f1xx_it.o"
 "vortex_stm32f103\stm32f1xx_hal_msp.o"
+"vortex_stm32f103\pid.o"
+"vortex_stm32f103\mode.o"
 "vortex_stm32f103\stm32f1xx_hal_gpio_ex.o"
 "vortex_stm32f103\stm32f1xx_hal_i2c.o"
 "vortex_stm32f103\stm32f1xx_hal.o"

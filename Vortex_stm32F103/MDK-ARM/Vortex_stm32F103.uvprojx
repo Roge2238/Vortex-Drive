@@ -494,6 +494,26 @@
               <FileType>1</FileType>
               <FilePath>../Core/Src/stm32f1xx_hal_msp.c</FilePath>
             </File>
+            <File>
+              <FileName>pid.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\pid.c</FilePath>
+            </File>
+            <File>
+              <FileName>mode.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\mode.c</FilePath>
+            </File>
+            <File>
+              <FileName>mode.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\mode.h</FilePath>
+            </File>
+            <File>
+              <FileName>pid.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>.\pid.h</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>
