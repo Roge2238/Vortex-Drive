@@ -97,11 +97,16 @@ void VideoPlayer::startPlay(const QString &rtspUrl)
                       ).arg(deviceName);
     } else {
         // 默认UDP RTP接收
+        // rtpjitterbuffer 抖动缓冲：UDP 会乱序/丢包/抖动，
+        //   缓冲按序号重排、按时间戳均匀放行 → 解码节奏稳定不花屏；
+        //   latency=60ms 延迟预算（局域网抖动<5ms，余量充足），
+        //   drop-on-latency 迟到帧直接丢弃（保低延迟），
+        //   do-lost 丢包时通知解码器快速请求关键帧恢复画面
         QString addr = rtspUrl.mid(6);  // 去掉 "udp://"
         QString port = addr.split(":").last();
         pipeStr = QString(
-                      "udpsrc port=%1 ! "
-                      "application/x-rtp,media=video,encoding-name=H264,payload=96 ! "
+                      "udpsrc port=%1 caps=\"application/x-rtp,media=video,encoding-name=H264,payload=96\" ! "
+                      "rtpjitterbuffer latency=60 drop-on-latency=true do-lost=true ! "
                       "rtph264depay ! "
                       "h264parse ! "
                       "avdec_h264 ! "
