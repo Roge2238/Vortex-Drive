@@ -79,6 +79,46 @@
 void Send_To_VOFA(float v1, float v2, float v3, float v4,
                   float v5, float v6, float v7, float v8);
 
+/* ========== IWDG 独立看门狗（软件死机 → 硬件复位停车） ==========
+ * 原理：独立 LSI 时钟驱动的倒计数硬件。主循环周期性"喂狗"重装计数，
+ *       程序一卡死 → 没人喂狗 → 计数到 0 → 芯片硬件复位 → PWM 停止 → 小车停下。
+ *       （程序卡死时 TIM/PWM 外设仍在运行，没有看门狗电机会保持最后的
+ *         指令全速冲出，这是嵌入式小车最危险的事故类型）
+ *
+ * 为什么用 IWDG 而不是 WWDG：
+ *   IWDG 用 LSI(~40kHz 内部RC振荡器)，与 72MHz 主时钟完全独立，
+ *   主时钟停摆、晶振损坏它照常工作；WWDG 用主时钟，主时钟挂了它也瞎。
+ *   IWDG 一旦 0xCCCC 启动无法软件关闭（只能复位）——故意设计，
+ *   防止程序卡死后还能自己把看门狗关掉。
+ *
+ * 精度说明：LSI 精度只有 30~60kHz，1s 超时实际是 0.5~2s；
+ *           主循环一圈 <5ms，喂狗余量充足，Mode_switch 里的 HAL_Delay(25) 无影响。
+ *
+ * 调试注意：ST-Link 单步调试/断点暂停时 CPU 停了但看门狗还在倒数，
+ *           会把调试中的芯片复位。调试阶段可打开下方 DBGMCU 冻结位，
+ *           上线前务必删除（否则看门狗形同虚设）。
+ */
+static void IWDG_Init_1s(void)
+{
+  RCC->CSR |= RCC_CSR_LSION;      /* 开启 LSI 低速时钟 */
+  while (!(RCC->CSR & RCC_CSR_LSIRDY));
+
+  /* 调试用：调试器挂起时冻结 IWDG（上线前删除下面两行） */
+  //__HAL_RCC_DBGMCU_CLK_ENABLE();
+  //DBGMCU->CR |= DBGMCU_CR_DBG_IWDG_STOP;
+
+  IWDG->KR  = 0x5555;             /* 解锁 PR/RLR 寄存器写保护 */
+  IWDG->PR  = 0x04;               /* 预分频 /64 → 40kHz/64 = 625Hz */
+  IWDG->RLR = 625;                /* 625 个计数 ≈ 1s 超时 */
+  IWDG->KR  = 0xCCCC;             /* 启动看门狗（此后不可关闭） */
+}
+
+/* 喂狗：主循环每圈调用，重装计数防止复位 */
+static inline void IWDG_Feed(void)
+{
+  IWDG->KR = 0xAAAA;
+}
+
 /* ========== 全局变量 ========== */
 uint8_t cmd_buf[CMD_LEN];
 uint8_t recv;
@@ -105,10 +145,25 @@ volatile uint8_t cv_active = 0;          // 收到首个AUTO帧后置1
 float cur_left_pwm  = 0.0f;
 float cur_right_pwm = 0.0f;
 
+/* ========== VOFA 调试环形缓冲（SPSC：TIM4中断写 / 主循环读） ==========
+ * 背景：原来在 TIM4 中断里直接 HAL_UART_Transmit 发 VOFA 数据，
+ *       90字节@115200 要阻塞约 7.8ms，占 20ms 控制周期近 40%，
+ *       会破坏 PID 节拍精度。改为中断里只做 8 个 float 拷贝（约 1us），
+ *       实际发送交给主循环空闲时执行。
+ * 安全：单生产者(TIM4中断)/单消费者(主循环)，uint8_t 索引读写是原子的，
+ *       满时丢最旧一帧（调试数据允许丢，保证拿到的是最新状态）。
+ */
+#define VOFA_CH_NUM 8    /* 每帧 8 通道 */
+#define VOFA_RING_N 4    /* 环形缓冲 4 帧深 */
+volatile float vofa_ring[VOFA_RING_N][VOFA_CH_NUM];
+volatile uint8_t vofa_wr = 0;   /* 生产者写索引 */
+volatile uint8_t vofa_rd = 0;   /* 消费者读索引 */
+
 /* ========== 主函数 ========== */
 int main(void)
 {
   HAL_Init();
+  IWDG_Init_1s();   /* 独立看门狗：程序死机 ~1s 内硬件复位停车 */
   SystemClock_Config();
 
   MX_USART1_UART_Init();
@@ -166,6 +221,18 @@ int main(void)
   while (1)
   {
     frame_task();
+    IWDG_Feed();   /* 喂狗：主循环卡死超 ~1s 即触发硬件复位停车 */
+
+    /* VOFA 发送：主循环空闲时执行。
+     * 串口忙(gState != READY)则跳过整帧等下一轮，保证主循环不被调试输出阻塞。 */
+    if (vofa_rd != vofa_wr && huart3.gState == HAL_UART_STATE_READY)
+    {
+      Send_To_VOFA(vofa_ring[vofa_rd][0], vofa_ring[vofa_rd][1],
+                   vofa_ring[vofa_rd][2], vofa_ring[vofa_rd][3],
+                   vofa_ring[vofa_rd][4], vofa_ring[vofa_rd][5],
+                   vofa_ring[vofa_rd][6], vofa_ring[vofa_rd][7]);
+      vofa_rd = (vofa_rd + 1) & (VOFA_RING_N - 1);
+    }
   }
 }
 
@@ -339,14 +406,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       /* ———：输出 PWM ——— */
       set_drive_pwm(cur_left_pwm, cur_right_pwm);
 
-      /* ——— VOFA 调试 ———
-      *   1-2: 编码器脉冲     3-4: cv.error / cv.area (外环输入)
-      *   5-6: steer/speed (外环输出=期望速度)   7-8: 实际速度
+      /* ——— VOFA 调试数据：写入环形缓冲，主循环负责发送 ———
+      *   通道定义: 1-2 编码器脉冲   3-4 cv.error / cv.area (外环输入)
+      *             5-6 steer/speed (外环输出=期望速度)   7-8 实际速度
+      *
+      *   不能在中断里直接 HAL_UART_Transmit：90字节@115200 阻塞约 7.8ms，
+      *   占 20ms 控制周期近 40%，会破坏 PID 节拍。这里只拷贝 8 个 float（约 1us）。
       */
-      Send_To_VOFA((float)left_pulse, (float)right_pulse,
-                  (float)cv.error, (float)cv.area,
-                  steer_out, speed_out,
-                  left_speed, right_speed);
+      {
+        volatile float *p = vofa_ring[vofa_wr];
+        p[0] = (float)left_pulse;   p[1] = (float)right_pulse;
+        p[2] = (float)cv.error;     p[3] = (float)cv.area;
+        p[4] = steer_out;           p[5] = speed_out;
+        p[6] = left_speed;          p[7] = right_speed;
+
+        /* 满则丢最旧一帧（覆盖式更新，调试数据允许丢，不能积压） */
+        uint8_t next = (vofa_wr + 1) & (VOFA_RING_N - 1);
+        if (next == vofa_rd)
+          vofa_rd = (vofa_rd + 1) & (VOFA_RING_N - 1);
+        vofa_wr = next;
+      }
  }
 }
 
