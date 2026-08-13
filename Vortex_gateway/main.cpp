@@ -56,13 +56,15 @@ int main(int argc, char* argv[])
         return -1;
     }
     
-    if (!serial_config(urt_fd, B4800))
+    /* 原 B4800 → B115200：与 STM32 端 usart.c 的 huart1 波特率保持一致，
+     * 单帧传输从 12.5ms 降到 0.5ms，两端必须同步修改否则乱码 */
+    if (!serial_config(urt_fd, B115200))
     {
         perror("配置串口失败");
         close(urt_fd);
         return -1;
     }
-    std::cout << "串口初始化成功 (波特率:4800)\n";
+    std::cout << "串口初始化成功 (波特率:115200)\n";
 
     // ===== 测试模式 =====
     if(argc == 2 && strcmp(argv[1], "--test") == 0)

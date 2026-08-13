@@ -1,6 +1,7 @@
 /*
  * main_test.c — 串级 PID 闭环控制 (外环视觉 + 内环速度)
- *
+ * main 包含完整模式切换 手动遥控 视觉跟踪功能 
+
  * 功能：接收 OpenCV 发来的 error(横向像素偏移) / area(面积差)，
  *       外环视觉PID → 期望速度 → 内环速度PID → PWM
  *
@@ -61,6 +62,11 @@
 #define RAMP_HIGH  20.0f    // 高速时可放松到 20%/周期  亲测有效
 #define SPEED_THRESH 3.0f   // 车速 < 3% 认为尚未脱离静摩擦区
 
+
+/* 命令超时检测 - 200ms内必须收到新命令 */
+#define CMD_TIMEOUT_MS  200
+#define CMD_TIMEOUT_CNT (CMD_TIMEOUT_MS / 20)
+
 /*
  * 外环 sqrt 速度映射 (area → 期望速度)
  *    speed = K_AREA × √|area| × sign(area)
@@ -112,6 +118,20 @@ int no_cmd_cnt = 0;
 
 volatile uint8_t cmd_timeout_cnt = 0;
 volatile uint8_t cv_active = 0;          /* 收到首个AUTO帧后置1 */
+
+/* ========== VOFA 调试环形缓冲（SPSC：TIM4中断写 / 主循环读） ==========
+ * 背景：原来在 TIM4 中断里直接 HAL_UART_Transmit 发 VOFA 数据，
+ *       90字节@115200 要阻塞约 7.8ms，占 20ms 控制周期近 40%，
+ *       会破坏 PID 节拍精度。改为中断里只做 8 个 float 拷贝（约 1us），
+ *       实际发送交给主循环空闲时执行。
+ * 安全：单生产者(TIM4中断)/单消费者(主循环)，uint8_t 索引读写是原子的，
+ *       满时丢最旧一帧（调试数据允许丢，保证拿到的是最新状态）。
+ */
+#define VOFA_CH_NUM 8    /* 每帧 8 通道 */
+#define VOFA_RING_N 4    /* 环形缓冲 4 帧深 */
+volatile float vofa_ring[VOFA_RING_N][VOFA_CH_NUM];
+volatile uint8_t vofa_wr = 0;   /* 生产者写索引 */
+volatile uint8_t vofa_rd = 0;   /* 消费者读索引 */
 
 /* ========== 主函数 ========== */
 int main(void)
@@ -174,6 +194,17 @@ int main(void)
   while (1)
   {
     frame_task();
+
+    /* VOFA 发送：主循环空闲时执行。
+     * 串口忙(gState != READY)则跳过整帧等下一轮，保证主循环不被调试输出阻塞。 */
+    if (vofa_rd != vofa_wr && huart3.gState == HAL_UART_STATE_READY)
+    {
+      Send_To_VOFA(vofa_ring[vofa_rd][0], vofa_ring[vofa_rd][1],
+                   vofa_ring[vofa_rd][2], vofa_ring[vofa_rd][3],
+                   vofa_ring[vofa_rd][4], vofa_ring[vofa_rd][5],
+                   vofa_ring[vofa_rd][6], vofa_ring[vofa_rd][7]);
+      vofa_rd = (vofa_rd + 1) & (VOFA_RING_N - 1);
+    }
   }
 }
 
@@ -182,8 +213,10 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
   {
+
     push_uart_buf(recv);
     HAL_UART_Receive_IT(huart, &recv, 1);
+    
   }
 }
 
@@ -336,14 +369,26 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   /* ———：输出 PWM ——— */
   set_drive_pwm(cur_left_pwm, cur_right_pwm);
 
-  /* ——— VOFA 调试 ———
-   *   1-2: 编码器脉冲     3-4: cv.error / cv.area (外环输入)
-   *   5-6: steer/speed (外环输出=期望速度)   7-8: 实际速度
+  /* ——— VOFA 调试数据：写入环形缓冲，主循环负责发送 ———
+   *   通道定义: 1-2 编码器脉冲   3-4 cv.error / cv.area (外环输入)
+   *             5-6 steer/speed (外环输出=期望速度)   7-8 实际速度
+   *
+   *   不能在中断里直接 HAL_UART_Transmit：90字节@115200 阻塞约 7.8ms，
+   *   占 20ms 控制周期近 40%。这里只拷贝 8 个 float（约 1us）。
    */
-  Send_To_VOFA((float)left_pulse, (float)right_pulse,
-               (float)cv.error, (float)cv.area,
-               steer_out, speed_out,
-               left_speed, right_speed);
+  {
+    volatile float *p = vofa_ring[vofa_wr];
+    p[0] = (float)left_pulse;   p[1] = (float)right_pulse;
+    p[2] = (float)cv.error;     p[3] = (float)cv.area;
+    p[4] = steer_out;           p[5] = speed_out;
+    p[6] = left_speed;          p[7] = right_speed;
+
+    /* 满则丢最旧一帧（覆盖式更新，调试数据允许丢，不能积压） */
+    uint8_t next = (vofa_wr + 1) & (VOFA_RING_N - 1);
+    if (next == vofa_rd)
+      vofa_rd = (vofa_rd + 1) & (VOFA_RING_N - 1);
+    vofa_wr = next;
+  }
 }
 
 void SystemClock_Config(void)
