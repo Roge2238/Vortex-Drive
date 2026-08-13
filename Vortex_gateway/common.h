@@ -35,5 +35,6 @@ extern CmdPacket latest_cmd;
 extern uint8_t latest_cmd_len;   // 实际帧长（CMD=8, AUTO/LOST=6）
 extern std::atomic<bool> cmd_updated;  // 有新命令
 extern std::atomic<bool> cmd_received;  // 已收到过命令
+extern std::atomic<bool> client_alive;  // 客户端在线标志（断线重连机制）
 
 #endif

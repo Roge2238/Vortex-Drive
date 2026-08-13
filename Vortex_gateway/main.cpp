@@ -27,6 +27,7 @@ atomic<bool> cmd_received(false);  // 启动时为false，收到第一个命令�
 
 atomic<bool> auto_mode(false);   // false=手动 true=自动
 atomic<bool> go_running(false);
+atomic<bool> client_alive(false); // 客户端在线标志（断线重连机制）
 
 // 信号处理函数
 void signal_handler(int sig)
@@ -100,55 +101,62 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    // 初始化网络服务 
+    // 初始化网络服务
     u_short port = 8651;
-    int server_fd = startup(&port);    
+    int server_fd = startup(&port);
     std::cout << "服务器启动，监听端口: " << port << "\n";
-    std::cout << "等待客户端连接...\n";
-
-    sockaddr_in client_addr{};
-    socklen_t cli_len = sizeof(client_addr);
-
-    int client_fd = accept(server_fd, (sockaddr*)&client_addr, &cli_len);
-    if (client_fd < 0 && errno == EINTR)
-    {
-        
-        std::cout << "在等待客户端时收到退出信号，退出\n";
-        close(server_fd);
-        close(urt_fd);
-        return 0;
-    }
-    if (client_fd < 0)
-    {
-        error_die("accept失败");
-        close(urt_fd);
-        close(server_fd);
-        return -1;
-    }
-    std::cout << "客户端连接成功: " << inet_ntoa(client_addr.sin_addr) << "\n";
-
 
     go_running.store(true);
 
-    
-    
-
-
-
-    thread recv_thread(recv_cmd, client_fd);
-    std::cout << "网络命令接收线程启动\n";
-
+    /* 推流/串口线程常驻：不依赖客户端连接。
+     * 客户端断开后继续推原图，新客户端重连后点播放立即有画面 */
     thread gst_thread(gst_task);
     std::cout << "GStreamer推流线程启动\n";
 
     thread serial_thread(serial_send_thread, urt_fd);
     std::cout << "串口发送线程启动\n";
 
+    sockaddr_in client_addr{};
+    socklen_t cli_len = sizeof(client_addr);
+    int client_fd = -1;
 
-    std::cout << "所有线程启动完成，按 Ctrl+C 退出\n";
+    /* 客户端连接循环：断开一个客户端就回到 accept 继续等下一个。
+     * 进程生死只由 Ctrl+C(go_running) 决定，客户端断开不会拖垮网关。
+     * 退出：sigaction 无 SA_RESTART → accept 被信号打断返回 EINTR → break */
+    while (go_running.load())
+    {
+        std::cout << "等待客户端连接...\n";
+        client_fd = accept(server_fd, (sockaddr*)&client_addr, &cli_len);
+        if (client_fd < 0)
+        {
+            /* EINTR = 信号打断。本程序的信号处理器只会置 go_running=false，
+             * 直接 continue 回 while 条件处重新检查即可，无需在此重复判断 */
+            if (errno == EINTR)
+                continue;
+            perror("accept失败");
+            std::this_thread::sleep_for(std::chrono::milliseconds(500));
+            continue;
+        }
 
-    recv_thread.join();
-    std::cout << "网络命令接收线程已退出\n";
+        client_alive.store(true);
+        std::cout << "客户端连接成功: " << inet_ntoa(client_addr.sin_addr) << "\n";
+
+        thread recv_thread(recv_cmd, client_fd);
+        std::cout << "网络命令接收线程启动\n";
+        recv_thread.join();          // 阻塞直到该客户端断开
+        std::cout << "网络命令接收线程已退出\n";
+        close(client_fd);
+
+        /* 断连清理：停止跟踪、清残留按键，重连后不会发送旧指令。
+         * 安全停车由串口线程完成：自动模式补发LOST立即停，
+         * 手动模式停发指令由 STM32 200ms 超时滑行停止 */
+        client_alive.store(false);
+        track_mode.store(false);
+        auto_mode.store(false);
+        cmd_received.store(false);
+        cmd_updated.store(false);
+        std::cout << "客户端断开，等待重连...\n";
+    }
 
     gst_thread.join();
     std::cout << "GStreamer推流线程已退出\n";
@@ -156,7 +164,6 @@ int main(int argc, char* argv[])
     serial_thread.join();
     std::cout << "串口发送线程已退出\n";
 
-    close(client_fd);
     close(server_fd);
     close(urt_fd);
     std::cout << "资源已释放，程序退出\n";

@@ -85,18 +85,19 @@ void recv_cmd(int fd)
             }
             if (n == 0)
             {
-                // 客户端正常断开
-                go_running.store(false);
+                /* 客户端正常断开：只退出本线程，进程继续等待重连
+                 * （go_running 只由退出信号设置，客户端断开不能拖垮网关） */
+                client_alive.store(false);
                 break;
             }
+            /* EINTR = 信号打断：continue 回 while 条件重新检查 go_running，
+             * 处理器只会置 false，无需在此重复判断 */
             if (n < 0 && errno == EINTR)
-            {
-                if (!go_running.load())
-                    break;
                 continue;
-            }
+            /* 读错误(ECONNRESET等)：连接已不可用，按断开处理，
+             * 进程继续等重连，而不是整个网关退出 */
             perror("recv error");
-            go_running.store(false);
+            client_alive.store(false);
             break;
         }
 
