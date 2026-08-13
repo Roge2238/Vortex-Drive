@@ -69,7 +69,7 @@ void serial_send_thread(int fd)
     const milliseconds interval{20};
     CmdPacket last_sent{};      // 保存最后发送的命令
     uint8_t last_sent_len = 0;  // 实际帧长
-    bool lost_sent = false;     // 视觉线程退出时只补发一次LOST
+    bool lost_sent = false;     // 视觉线程退出/客户端断开时只补发一次LOST
 
     while(go_running.load(std::memory_order_acquire))
     {
@@ -80,7 +80,20 @@ void serial_send_thread(int fd)
             /* 自动模式：转发 OpenCV 检测帧 */
             uint8_t vf[MAX_PACKET_LEN];
             size_t vlen = 0;
-            if (vision_get_frame(vf, &vlen))
+            /* 客户端断开优先于一切：立即补发一帧 LOST 停车，
+             * 而不是继续转发视觉帧（保证不依赖 STM32 端 1s 超时）。
+             * 注意判断顺序不能反：若先转发视觉帧，断连瞬间可能
+             * 漏掉 LOST，小车要多跑 1 秒 */
+            if (!client_alive.load())
+            {
+                if (!lost_sent)
+                {
+                    static const uint8_t lost[] = {0xAA, 0x03, 0x00, 0x00, 0x00, 0x00};
+                    serial_send(fd, reinterpret_cast<const CmdPacket*>(lost), sizeof(lost));
+                    lost_sent = true;
+                }
+            }
+            else if (vision_get_frame(vf, &vlen))
             {
                 serial_send(fd, reinterpret_cast<const CmdPacket*>(vf), vlen);
                 lost_sent = false;
@@ -97,7 +110,9 @@ void serial_send_thread(int fd)
         else
         {
             
-            if (!cmd_received.load())
+            /* 无客户端在线或尚未收到命令：不发帧，
+             * STM32 端 200ms 超时自动滑行停止 */
+            if (!client_alive.load() || !cmd_received.load())
             {
                 auto end = steady_clock::now();
                 auto cost = duration_cast<microseconds>(end - start);
