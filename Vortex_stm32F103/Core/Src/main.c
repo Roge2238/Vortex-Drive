@@ -207,6 +207,12 @@ int main(void)
   /* 20ms 定时中断 */
   HAL_TIM_Base_Start_IT(&htim4);
 
+  /* 舵机 PWM（与20ms中断共用TIM4计数器，互不干扰）：
+   *   CH3 → PB8 水平舵机 (Pan)   CH4 → PB9 竖直舵机 (Tilt)
+   * 角度→CCR 换算：90°=150 (1.5ms)，见 tim.c MX_TIM4_Init */
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+
   /* 编码器 */
   HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
