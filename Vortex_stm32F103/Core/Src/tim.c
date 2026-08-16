@@ -175,6 +175,7 @@ void MX_TIM4_Init(void)
 
   TIM_ClockConfigTypeDef sClockSourceConfig = {0};
   TIM_MasterConfigTypeDef sMasterConfig = {0};
+  TIM_OC_InitTypeDef sConfigOC = {0};
 
   /* USER CODE BEGIN TIM4_Init 1 */
 
@@ -200,9 +201,35 @@ void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
+
+  /* ===== 舵机 PWM 通道配置 =====
+   * TIM4 周期 20ms = 50Hz，正好是舵机标准频率。
+   * 占空比换算（ARR=1999 ↔ 20ms，即 1ms = 100 计数）：
+   *   0°   → 0.5ms → CCR=50
+   *   90°  → 1.5ms → CCR=150
+   *   180° → 2.5ms → CCR=250
+   *
+   * 注意：TIM4 同时用于 20ms 控制节拍中断（更新事件）与舵机 PWM（比较输出），
+   *       两者共用计数器互不干扰，main 中同时 Start_IT + PWM_Start 即可。 */
+  sConfigOC.OCMode = TIM_OCMODE_PWM1;
+  sConfigOC.Pulse = 150;            /* 初始 90°（1.5ms 中位） */
+  sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
+  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_3) != HAL_OK)  /* PB8 = 水平舵机 (Pan) */
+  {
+    Error_Handler();
+  }
+  if (HAL_TIM_PWM_ConfigChannel(&htim4, &sConfigOC, TIM_CHANNEL_4) != HAL_OK)  /* PB9 = 竖直舵机 (Tilt) */
+  {
+    Error_Handler();
+  }
+
   /* USER CODE BEGIN TIM4_Init 2 */
 
   /* USER CODE END TIM4_Init 2 */
+
+  HAL_TIM_MspPostInit(&htim4);
 
 }
   
@@ -267,6 +294,27 @@ void HAL_TIM_MspPostInit(TIM_HandleTypeDef* timHandle)
   /* USER CODE BEGIN TIM2_MspPostInit 1 */
 
   /* USER CODE END TIM2_MspPostInit 1 */
+  }
+
+  if(timHandle->Instance==TIM4)
+  {
+  /* USER CODE BEGIN TIM4_MspPostInit 0 */
+
+  /* USER CODE END TIM4_MspPostInit 0 */
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    /**TIM4 GPIO Configuration
+    PB8     ------> TIM4_CH3    水平舵机 (Pan)
+    PB9     ------> TIM4_CH4    竖直舵机 (Tilt)
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_8|GPIO_PIN_9;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /* USER CODE BEGIN TIM4_MspPostInit 1 */
+
+  /* USER CODE END TIM4_MspPostInit 1 */
   }
 
 }
