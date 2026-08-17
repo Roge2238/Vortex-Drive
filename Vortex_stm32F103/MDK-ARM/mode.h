@@ -8,6 +8,7 @@
 #define CMD_TYPE 0x01
 #define AUTO_TYPE 0x02
 #define LOST_TYPE 0x03
+#define SERVO_TURN 0x04 
 
 #define UART_BUF_LEN 64
 #define CMD_LEN 6

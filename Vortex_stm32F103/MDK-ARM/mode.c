@@ -4,9 +4,11 @@
 #include "pid.h"
 #include "motor.h"
 #include "string.h"
+#include "servo.h"
 
 #define SIZE 10
 #define AUTO_LEN 4
+#define SERVO_LEN 4
 
 Mode_t last_mode = MODE_AUTO;
 
@@ -99,7 +101,7 @@ void frame_task(void)
 
     case READ_TYPE:
         type = tmp;
-        if(type != CMD_TYPE && type != AUTO_TYPE && type != LOST_TYPE)
+        if(type != CMD_TYPE && type != AUTO_TYPE && type != LOST_TYPE && type != SERVO_TURN)
         {
 
             state = WAIT_AA;
@@ -114,7 +116,13 @@ void frame_task(void)
         {
             mode = MODE_AUTO;
         }
+        else if(type == SERVO_TURN)
+        {
+            if(!Get_Servo_turn())
+            Set_Servo_turn(true);//开启舵机开关
 
+
+        }
         if(mode != last_mode)
         {
             last_mode = mode;
@@ -173,6 +181,16 @@ void frame_task(void)
             PID_Reset(&pid_steer);
             PID_Reset(&pid_speed);
             set_drive_pwm(0.0f, 0.0f);
+            tmp_buf_cnt = 0;
+            state = WAIT_AA;
+        }
+        else if(type == SERVO_TURN && tmp_buf_cnt == SERVO_LEN) 
+        {
+            /* 0x04 帧：像素偏移量(小端 int16) → 更新舵机测量值 */
+            Servo_UpdateMeasure(
+                (int16_t)((uint16_t)tmp_buf[0] | ((uint16_t)tmp_buf[1] << 8)),
+                (int16_t)((uint16_t)tmp_buf[2] | ((uint16_t)tmp_buf[3] << 8)));
+
             tmp_buf_cnt = 0;
             state = WAIT_AA;
         }
