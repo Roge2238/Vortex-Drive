@@ -32,6 +32,7 @@
 #include "pid.h"
 #include "mode.h"
 #include "cmd.h"
+#include "servo.h"
 #include <string.h>
 #include <stdio.h>
 #include <math.h>    /* sqrtf */
@@ -210,8 +211,12 @@ int main(void)
   /* 舵机 PWM（与20ms中断共用TIM4计数器，互不干扰）：
    *   CH3 → PB8 水平舵机 (Pan)   CH4 → PB9 竖直舵机 (Tilt)
    * 角度→CCR 换算：90°=150 (1.5ms)，见 tim.c MX_TIM4_Init */
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);
-  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_3);// 水平舵机 
+  HAL_TIM_PWM_Start(&htim4, TIM_CHANNEL_4);// 竖直舵机 
+
+  /* 舵机 PID 初始化：增益装载 + 位置复位中位 90° */
+  Servo_PID_Init();
+
 
   /* 编码器 */
   HAL_TIM_Encoder_Start(&htim1, TIM_CHANNEL_ALL);
@@ -271,6 +276,12 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
    * 收到新数据时 frame_task→cmd_timeout_cnt=0 重置
    */
   cmd_timeout_cnt++;
+
+  if(Get_Servo_turn()) // 如果舵机正在启动 检查相关变量 并输出PWM
+  {
+    servo_method();// 舵机启动 执行舵机任务
+  }
+
 
   /* AUTO 模式断链保护：视觉链路1秒无帧 → 清积分停车*/
   if (mode == MODE_AUTO && cv_active && cmd_timeout_cnt > AUTO_TIMEOUT_CNT)
