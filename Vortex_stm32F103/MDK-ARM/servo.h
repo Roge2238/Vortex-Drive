@@ -18,6 +18,9 @@ void Servo_PID_Init(void);
 /* 帧解析更新接口：mode.c 收到 0x04 帧后调用，像素偏移 → 更新舵机测量值 */
 void Servo_UpdateMeasure(int16_t x_px, int16_t y_px);
 
+// 测试/开环接口：直接设定角度(0~180)，角度→CCR 并输出，不经过 PID
+void Servo_SetAngle(uint8_t pan_angle, uint8_t tilt_angle);
+
 /* 舵机转动开关 */
 bool Get_Servo_turn(void);
 void Set_Servo_turn(bool turn);

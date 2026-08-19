@@ -69,6 +69,23 @@ void Servo_UpdateMeasure(int16_t x_px, int16_t y_px)
     servo_info.find = 1;
 }
 
+// 测试/开环接口：mode.c 收到 0x05(SERVO_TEST) 帧后调用
+//   直接按角度(0~180)输出，不经过 PID，用于验证舵机方向/行程/限幅
+void Servo_SetAngle(uint8_t pan_angle, uint8_t tilt_angle)
+{
+    // 限幅：只接受 0~180
+    if (pan_angle > 180)  pan_angle = 180;
+    if (tilt_angle > 180) tilt_angle = 180;
+
+    // 角度 → CCR 线性映射：0°→50, 90°→150, 180°→250
+    pre_X_PWM = SERVO_MIN_CCR + (int)pan_angle  * (SERVO_MAX_CCR - SERVO_MIN_CCR) / 180;
+    pre_Y_PWM = SERVO_MIN_CCR + (int)tilt_angle * (SERVO_MAX_CCR - SERVO_MIN_CCR) / 180;
+
+    X_PWM(pre_X_PWM);
+    Y_PWM(pre_Y_PWM);
+}
+
+
 /* 增量式 PID：返回本周期角度偏移量（单位 CCR 计数）
  *   out = kp*err + kd*derr/dt   （I 项未启用，先跑通再调）
  *   err 量纲为像素，kp 负责像素→角度增益 */

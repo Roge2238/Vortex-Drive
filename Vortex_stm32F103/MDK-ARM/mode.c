@@ -9,6 +9,7 @@
 #define SIZE 10
 #define AUTO_LEN 4
 #define SERVO_LEN 4
+#define SERVO_TEST_LEN 2
 
 Mode_t last_mode = MODE_AUTO;
 
@@ -101,7 +102,7 @@ void frame_task(void)
 
     case READ_TYPE:
         type = tmp;
-        if(type != CMD_TYPE && type != AUTO_TYPE && type != LOST_TYPE && type != SERVO_TURN)
+        if(type != CMD_TYPE && type != AUTO_TYPE && type != LOST_TYPE && type != SERVO_TURN && type != SERVO_TEST)
         {
 
             state = WAIT_AA;
@@ -122,6 +123,12 @@ void frame_task(void)
             Set_Servo_turn(true);//开启舵机开关
 
 
+        }
+        else if(type == SERVO_TEST)
+        {
+            // 测试模式：关PID闭环，改开环直控，避免中断里覆盖测试角度
+            if(Get_Servo_turn())
+            Set_Servo_turn(false);
         }
         if(mode != last_mode)
         {
@@ -190,6 +197,14 @@ void frame_task(void)
             Servo_UpdateMeasure(
                 (int16_t)((uint16_t)tmp_buf[0] | ((uint16_t)tmp_buf[1] << 8)),
                 (int16_t)((uint16_t)tmp_buf[2] | ((uint16_t)tmp_buf[3] << 8)));
+
+            tmp_buf_cnt = 0;
+            state = WAIT_AA;
+        }
+        else if(type == SERVO_TEST && tmp_buf_cnt == SERVO_TEST_LEN)
+        {
+            /* 0x05 帧：直接指定角度(0~180)，开环输出，不经过PID */
+            Servo_SetAngle(tmp_buf[0], tmp_buf[1]);
 
             tmp_buf_cnt = 0;
             state = WAIT_AA;
