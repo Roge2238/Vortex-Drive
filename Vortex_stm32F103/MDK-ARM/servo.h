@@ -2,6 +2,7 @@
 #define __SERVO_H__
 
 #include "stm32f1xx_hal.h"
+#include <stdbool.h>
 
 /* ===== 舵机角度 ↔ CCR 换算（TIM4: ARR=1999, 20ms=50Hz, 1ms=100计数） =====
  *   0°  → 0.5ms → CCR=50
@@ -11,6 +12,16 @@
 #define SERVO_MIN_CCR     50
 #define SERVO_CENTER_CCR  150
 #define SERVO_MAX_CCR     250
+
+// 舵机测量/目标信息（内部状态，外部经接口函数访问）
+typedef struct
+{
+    float x_measure;   // 0x04帧: 水平像素偏移 (+右/-左)
+    float y_measure;   // 0x04帧: 竖直像素偏移 (+下/-上)
+    float x_goal;      // 目标偏移，默认 0 = 画面中心
+    float y_goal;
+    uint8_t find;      // 1=检测到目标
+} Servo_Info;
 
 /* PID 初始化：装载 Kp/Ki/Kd，位置复位到中位 */
 void Servo_PID_Init(void);
