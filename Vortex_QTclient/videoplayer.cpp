@@ -1,5 +1,6 @@
 #include "videoplayer.h"
 #include <gst/app/gstappsink.h>
+#include <QCoreApplication>
 #include <QDebug>
 #include <QMessageBox>
 
@@ -75,6 +76,11 @@ static gboolean onBusMessage(GstBus* bus, GstMessage* msg, gpointer userData)
 
 VideoPlayer::VideoPlayer(QObject *parent) : QObject(parent)
 {
+    // 绿色版：插件按 exe 相对路径加载（lib/gstreamer-1.0），
+    // 拷贝到任何电脑都能用，不再依赖绝对路径的 GST_PLUGIN_PATH 环境变量
+    QString pluginDir = QCoreApplication::applicationDirPath() + "/lib/gstreamer-1.0";
+    g_setenv("GST_PLUGIN_PATH", pluginDir.toUtf8().constData(), TRUE);
+
     gst_init(nullptr, nullptr);
 }
 

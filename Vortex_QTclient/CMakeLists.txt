@@ -1,8 +1,21 @@
 cmake_minimum_required(VERSION 3.20)
 cmake_policy(SET CMP0144 NEW)
 
-set(Qt6_ROOT "C:/Qt/6.10.2/mingw_64")
-set(GST_ROOT "C:/Users/23585/Desktop/CODE/Tools/mingw_x86_64")
+# 路径改为可配置：优先读环境变量，否则用缓存变量（首次 configure 可用 -D 覆盖）
+#   Windows: set Qt6_ROOT=C:/Qt/6.10.2/mingw_64
+#            set GST_ROOT=C:/Tools/mingw_x86_64
+if(DEFINED ENV{Qt6_ROOT})
+    set(Qt6_ROOT "$ENV{Qt6_ROOT}")
+else()
+    set(Qt6_ROOT "C:/Qt/6.10.2/mingw_64" CACHE PATH "Qt6 安装根目录（含 mingw_64 子目录）")
+endif()
+
+if(DEFINED ENV{GST_ROOT})
+    set(GST_ROOT "$ENV{GST_ROOT}")
+else()
+    set(GST_ROOT "C:/Tools/mingw_x86_64" CACHE PATH "GStreamer 安装根目录（含 bin/lib/include）")
+endif()
+
 list(APPEND CMAKE_PREFIX_PATH ${Qt6_ROOT} ${GST_ROOT})
 
 project(Vortex_QTclient LANGUAGES CXX)
@@ -61,10 +74,10 @@ add_custom_command(TARGET Vortex_QTclient POST_BUILD
     COMMENT "复制 GStreamer 插件到输出目录"
 )
 
-# ==== 新增：运行时提示 ====
+# ==== 运行时提示 ====
 message(STATUS "========================================")
-message(STATUS "调试运行前请设置环境变量：")
-message(STATUS "  set GST_PLUGIN_PATH=${GST_ROOT}/lib/gstreamer-1.0")
+message(STATUS "GStreamer 插件已复制到输出目录 lib/gstreamer-1.0，")
+message(STATUS "程序启动时按 exe 相对路径自动加载，无需手动设置环境变量。")
 message(STATUS "========================================")
 
 # Qt 官方部署脚本（仅 cmake --install 时生效）
