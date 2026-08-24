@@ -59,6 +59,7 @@ target_link_libraries(Vortex_QTclient PRIVATE
 
 # ==== 新增：调试阶段自动复制 GStreamer DLL ====
 file(GLOB GST_DLLS "${GST_ROOT}/bin/*.dll")
+list(FILTER GST_DLLS EXCLUDE REGEX ".*OpenCL\\.dll$")
 add_custom_command(TARGET Vortex_QTclient POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     ${GST_DLLS}
@@ -86,6 +87,10 @@ qt_generate_deploy_app_script(
     OUTPUT_SCRIPT deploy_script
 )
 install(SCRIPT ${deploy_script})
+
+# ==== 打包 GStreamer DLL 与插件（绿色版必需）====
+install(FILES ${GST_DLLS} DESTINATION ${CMAKE_INSTALL_BINDIR})
+install(DIRECTORY ${GST_ROOT}/lib/gstreamer-1.0 DESTINATION ${CMAKE_INSTALL_BINDIR}/lib)
 
 install(TARGETS Vortex_QTclient
     BUNDLE DESTINATION .
