@@ -185,7 +185,7 @@ void MX_TIM4_Init(void)
   htim4.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim4.Init.Period = 1999;
   htim4.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
-   htim2.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;
+  htim4.Init.AutoReloadPreload = TIM_AUTORELOAD_PRELOAD_ENABLE;  /* 修正原笔误：曾误写成 htim2 */
 
 
   if (HAL_TIM_Base_Init(&htim4) != HAL_OK)
@@ -226,6 +226,13 @@ void MX_TIM4_Init(void)
   {
     Error_Handler();
   }
+
+  /* 关键：开比较输出预装载（OC3PE/OC4PE）。
+   * 本工程 HAL 库版本较老，TIM_OC_InitTypeDef 无 OCPreload 成员，
+   * 故在 ConfigChannel 之后直接用宏置位。
+   * 效果：运行时写 CCR 只在 20ms 更新事件边界装载，杜绝残缺脉冲 → 舵机不跳角。 */
+  __HAL_TIM_ENABLE_OCxPRELOAD(&htim4, TIM_CHANNEL_3);
+  __HAL_TIM_ENABLE_OCxPRELOAD(&htim4, TIM_CHANNEL_4);
 
   /* USER CODE BEGIN TIM4_Init 2 */
 
