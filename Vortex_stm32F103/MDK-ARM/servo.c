@@ -1,22 +1,34 @@
 #include "servo.h"
 #include "tim.h"
+#include <math.h>
 
 /* ===== 舵机增量式 PID 控制 =====
- * 架构：0x04(SERVO_TURN) 帧携带像素偏移量 → 树莓派摄像头画面中心误差
- *       增量式 PID 把像素偏移换算成角度偏移量(CCR) → 累加到绝对角度位置
+ * 架构：0x04(SERVO_TURN) 帧携带目标像素坐标 (cx,cy) → STM32 内部定 goal(画面中心)
+ *       增量式 PID 把像素误差 err=measure-goal 换算成角度偏移量(CCR) → 累加到绝对角度位置
  *       pre_X/Y_PWM 即"当前舵机绝对角度(CCR)"，每周期 +增量 得到新位置
  *
  * 时序：由 TIM4 20ms 中断驱动 (servo_turn==true 时调用 servo_method)
  */
 
-static Servo_Info servo_info = {0};    /* 帧解析经 Servo_UpdateMeasure 填充 */
+/* ——— 方向校正 ———
+ * 机械约定：Pan 0°=最右 / 90°=中 / 180°=最左；Tilt 0°=朝天 / 90°=水平
+ * 目标偏右(err>0) → Pan 需往右转 → 角度减小 → CCR 减小 → 增量取负
+ */
+#define SERVO_X_REVERSE 1
+
+/* 目标点默认画面中心；PID 内部 err = measure - goal */
+static Servo_Info servo_info = {
+    .x_goal = SERVO_CENTER_PX_X,
+    .y_goal = SERVO_CENTER_PX_Y,
+};
 
 static bool servo_turn = false;
 
 /* ——— 增量式 PID 状态（X=水平Pan, Y=竖直Tilt） ——— */
+// 先不加Ki 纯PD控制 
 static float x_kp, x_ki, x_kd;
 static float x_last_err;
-static float x_v_err_sum;              /* 误差累积 → 绝对角度位置基准 */
+static float x_v_err_sum;              /* 误差累积  绝对角度位置基准  */
 
 static float y_kp, y_ki, y_kd;
 static float y_last_err;
@@ -28,22 +40,22 @@ static int pre_Y_PWM = SERVO_CENTER_CCR;
 
 void Servo_PID_Init(void)
 {
-    /* 像素 → CCR 增量增益。先给保守值，按实测标定：
-     *   x_kp 过大 → 舵机振荡；过小 → 跟踪滞后
-     *   x_kd 提供阻尼，抑制像素噪声抖动 */
+    /* 标定实测：24px/°（两轴一致）→ 1px ≈ 0.042 CCR
+     * kp：1px 误差单周期输出 0.05 CCR  0.042* 1.2 = 0.05 满补偿 
+     **/
     x_kp = 0.05f;
     x_ki = 0.0f;
-    x_kd = 0.3f;
+    x_kd = 0.001f;
     y_kp = 0.05f;
     y_ki = 0.0f;
-    y_kd = 0.3f;
+    y_kd = 0.001f;
 
     x_last_err = 0.0f;
     x_v_err_sum = 0.0f;
     y_last_err = 0.0f;
     y_v_err_sum = 0.0f;// 不再用I项 
 
-    /* 位置复位到中位 90°，避免上电从 0° 猛甩到目标 */
+    /* 初始化位置复位到中位 90 */
     pre_X_PWM = SERVO_CENTER_CCR;
     pre_Y_PWM = SERVO_CENTER_CCR;
     X_PWM(pre_X_PWM);
@@ -60,12 +72,18 @@ void Set_Servo_turn(bool turn)
     servo_turn = turn;
 }
 
-/* 帧解析更新接口：mode.c 收到 0x04 帧后调用
- *   像素偏移量（int16，画面中心为 0）→ 存入测量值，PID 下一拍使用 */
+
+//获取最新坐标 存入servo_info 中
 void Servo_UpdateMeasure(int16_t x_px, int16_t y_px)
 {
     servo_info.x_measure = (float)x_px;
     servo_info.y_measure = (float)y_px;
+    if (!servo_info.find)
+    {
+        /* 首帧同步 D 项记忆：避免 last_err=0 导致第一拍 derr 巨大、舵机猛甩 */
+        x_last_err = (float)x_px - servo_info.x_goal;
+        y_last_err = (float)y_px - servo_info.y_goal;
+    }
     servo_info.find = 1;
 }
 
@@ -117,14 +135,42 @@ float Y_Servo_PID_Compute(float y_measure, float y_goal, float dt)
 /* 每 20ms：增量累加 → 绝对角度位置 → 限幅 → 输出 */
 void servo_method(void)
 {
-    /* X：水平 Pan (PB8 = TIM4_CH3) */
+    /* 从未收到目标帧：保持原位，不驱动 */
+    if (!servo_info.find)
+        return;
+
     float diff_X = X_Servo_PID_Compute(servo_info.x_measure, servo_info.x_goal, 0.020f);
-    pre_X_PWM += (int)diff_X;
-    X_PWM(pre_X_PWM);
+    float diff_Y = Y_Servo_PID_Compute(servo_info.y_measure, servo_info.y_goal, 0.020f);
+
+    /* 死区：|err| < 阈值 视为已对准目标点 → 增量钳 0（PID 状态照常更新）
+     * 注意判断基于 err=measure-goal 而非 measure，goal 非 0 时依然正确 */
+    if (fabsf(servo_info.x_measure - servo_info.x_goal) < SERVO_CENTER_DEADZONE_PX) diff_X = 0.0f;
+    if (fabsf(servo_info.y_measure - servo_info.y_goal) < SERVO_CENTER_DEADZONE_PX) diff_Y = 0.0f;
+
+    /* 增量限幅：每 20ms 最多走 ±2 CCR(≈2°)，防止 PID 输出超过舵机物理能力的大甩动
+     * 舵机速度约 400°/s → 20ms 极限 ~8°；限 2° 让启动/逼近都平滑 */
+    if (diff_X > 2.0f)  diff_X = 2.0f;
+    if (diff_X < -2.0f) diff_X = -2.0f;
+    if (diff_Y > 2.0f)  diff_Y = 2.0f;
+    if (diff_Y < -2.0f) diff_Y = -2.0f;
+
+#if SERVO_X_REVERSE
+    diff_X = -diff_X;
+#endif
+
+    /* X：水平 Pan (PB8 = TIM4_CH3) */
+    pre_X_PWM += (diff_X >= 0) ? (int)(diff_X + 0.5f) : (int)(diff_X - 0.5f);
 
     /* Y：竖直 Tilt (PB9 = TIM4_CH4) */
-    float diff_Y = Y_Servo_PID_Compute(servo_info.y_measure, servo_info.y_goal, 0.020f);
-    pre_Y_PWM += (int)diff_Y;
+    pre_Y_PWM += (diff_Y >= 0) ? (int)(diff_Y + 0.5f) : (int)(diff_Y - 0.5f);
+
+    /* 立即限幅位置状态：防止虚拟越界累计，避免误差反向时的回程延迟 */
+    if (pre_X_PWM < SERVO_MIN_CCR) pre_X_PWM = SERVO_MIN_CCR;
+    if (pre_X_PWM > SERVO_MAX_CCR) pre_X_PWM = SERVO_MAX_CCR;
+    if (pre_Y_PWM < SERVO_MIN_CCR) pre_Y_PWM = SERVO_MIN_CCR;
+    if (pre_Y_PWM > SERVO_MAX_CCR) pre_Y_PWM = SERVO_MAX_CCR;
+
+    X_PWM(pre_X_PWM);
     Y_PWM(pre_Y_PWM);
 }
 
