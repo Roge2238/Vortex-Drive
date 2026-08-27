@@ -59,7 +59,6 @@ struct FilterState
     bool target_found = false;
 };
 
-/* 圆形 置信度评分 */
 int circle_score(const std::vector<cv::Point>& contour, double& fill_ratio, double& wh_ratio)
 {
     const double area = cv::contourArea(contour);
@@ -88,7 +87,7 @@ int circle_score(const std::vector<cv::Point>& contour, double& fill_ratio, doub
     return score;
 }
 
-/* 单帧检测 原地标注 img，输出 error(横向偏移) / area(面积差) */
+/* 单帧检测 原地标注 img，输出 error / area  */
 void detect(cv::Mat& img, FilterState& st, int& out_err, int& out_area, bool& out_found)
 {
     cv::Mat hsv, mask1, mask2, mask;
@@ -296,8 +295,6 @@ void init_gst()
     gst_object_unref(appsink);
 
     /* === 管道2：推流（appsrc → 编码 → UDP → QT） ===
-     * do-timestamp=true：跨管道推送时由 appsrc 按当前运行时刻打时间戳，
-     * 避免把采集管道的时间基带进推流管道造成时钟错乱。
      */
     err = nullptr;
     gchar* desc = g_strdup_printf(
@@ -348,8 +345,8 @@ void init_gst()
     /*
      * 注意 这里管2只走到 PAUSED，不设 PLAYING。
      * 因为x264enc 的 preroll 需要至少一帧初始化 SPS/PPS，
-     *       appsrc 此时还是空的 → 设 PLAYING 会卡死。
-     * 让消费者线程拿到第一帧后 push 进 appsrc → x264 完成 preroll
+     *       appsrc 此时还是空的  所以 设 PLAYING 会卡死。
+     * 让消费者线程拿到第一帧后 push 进 appsrc  x264 完成 preroll
      * → 再设 PLAYING。
      */
     gst_element_set_state(g_stream_pipeline, GST_STATE_PAUSED);
@@ -363,7 +360,7 @@ void gst_task()
     gst_init(nullptr, nullptr);
     init_gst();
 
-    // 管道初始化失败：直接退出，串口线程走 LOST 兜底
+    // 管道初始化失败 直接退出，串口线程走 LOST 兜底
     if (!g_pipeline || !g_stream_pipeline)
     {
         vision_alive.store(false);
@@ -379,7 +376,7 @@ void gst_task()
         bool got = false;
         {
             std::unique_lock<std::mutex> lock(frame_q_mtx);
-            // 100ms 超时兜底：周期性醒来检查退出标志
+            // 100ms 超时：周期性醒来检查退出标志
             cv_q.wait_for(lock, std::chrono::milliseconds(100), [] {
                 return !frame_q.empty() || !go_running.load() || gst_fault.load();
             });

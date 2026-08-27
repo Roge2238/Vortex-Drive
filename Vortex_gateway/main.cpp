@@ -15,13 +15,14 @@
 #include "serial_task.h"
 #include "server.h"
 #include "gst_task.h"
+#include "servo_cv.h"
 
 using namespace std;
 
 // 最新命令存储
 mutex cmd_mtx;
 CmdPacket latest_cmd{};
-uint8_t latest_cmd_len = 0;     // 实际帧长（CMD=8, AUTO/LOST=6）
+uint8_t latest_cmd_len = 0;     // 实际帧长
 atomic<bool> cmd_updated(false);
 atomic<bool> cmd_received(false);  // 启动时为false，收到第一个命令后变true
 
@@ -57,8 +58,7 @@ int main(int argc, char* argv[])
         return -1;
     }
     
-    /* 原 B4800 → B115200：与 STM32 端 usart.c 的 huart1 波特率保持一致，
-     * 单帧传输从 12.5ms 降到 0.5ms，两端必须同步修改否则乱码 */
+   
     if (!serial_config(urt_fd, B115200))
     {
         perror("配置串口失败");
@@ -67,7 +67,7 @@ int main(int argc, char* argv[])
     }
     std::cout << "串口初始化成功 (波特率:115200)\n";
 
-    // ===== 测试模式 =====
+    // ===== 测试模式 ===== 已弃用  完全测试不了
     if(argc == 2 && strcmp(argv[1], "--test") == 0)
     {
         std::cout << "进入串口测试模式，输入8字节十六进制整帧 (如: AA01010000000000):\n";
@@ -101,17 +101,20 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    // 初始化网络服务
+    // 初始化网络服务  直接照搬Tinytalk 嘿嘿
     u_short port = 8651;
     int server_fd = startup(&port);
     std::cout << "服务器启动，监听端口: " << port << "\n";
 
     go_running.store(true);
 
-    /* 推流/串口线程常驻：不依赖客户端连接。
+    /* 将推流/串口线程设为常驻：不依赖客户端连接。
      * 客户端断开后继续推原图，新客户端重连后点播放立即有画面 */
     thread gst_thread(gst_task);
     std::cout << "GStreamer推流线程启动\n";
+
+    thread servo_thread(servo_cv_thread);
+    std::cout << "舵机自动跟踪线程启动（独立摄像头，不推流）\n";
 
     thread serial_thread(serial_send_thread, urt_fd);
     std::cout << "串口发送线程启动\n";
@@ -120,17 +123,13 @@ int main(int argc, char* argv[])
     socklen_t cli_len = sizeof(client_addr);
     int client_fd = -1;
 
-    /* 客户端连接循环：断开一个客户端就回到 accept 继续等下一个。
-     * 进程生死只由 Ctrl+C(go_running) 决定，客户端断开不会拖垮网关。
-     * 退出：sigaction 无 SA_RESTART → accept 被信号打断返回 EINTR → break */
+     //退出：sigaction 无 SA_RESTART → accept 被信号打断返回 EINTR → break */
     while (go_running.load())
     {
         std::cout << "等待客户端连接...\n";
         client_fd = accept(server_fd, (sockaddr*)&client_addr, &cli_len);
         if (client_fd < 0)
         {
-            /* EINTR = 信号打断。本程序的信号处理器只会置 go_running=false，
-             * 直接 continue 回 while 条件处重新检查即可，无需在此重复判断 */
             if (errno == EINTR)
                 continue;
             perror("accept失败");
@@ -148,7 +147,7 @@ int main(int argc, char* argv[])
         close(client_fd);
 
         /* 断连清理：停止跟踪、清残留按键，重连后不会发送旧指令。
-         * 安全停车由串口线程完成：自动模式补发LOST立即停，
+         * 安全停车由串口线程完成：自动模式补发LOST立即急停，
          * 手动模式停发指令由 STM32 200ms 超时滑行停止 */
         client_alive.store(false);
         track_mode.store(false);
@@ -160,6 +159,9 @@ int main(int argc, char* argv[])
 
     gst_thread.join();
     std::cout << "GStreamer推流线程已退出\n";
+
+    servo_thread.join();
+    std::cout << "舵机自动跟踪线程已退出\n";
 
     serial_thread.join();
     std::cout << "串口发送线程已退出\n";

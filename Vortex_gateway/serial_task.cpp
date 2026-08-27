@@ -1,6 +1,6 @@
 #include "serial_task.h"
 #include "gst_task.h"
-
+#include "servo_cv.h"
 
 bool serial_config(int fd, speed_t baud_rate)
 {
@@ -60,9 +60,6 @@ ssize_t serial_send(int fd, const CmdPacket* cmd, size_t len)
 
 
 
-
-
-
 void serial_send_thread(int fd)
 {
     using namespace std::chrono;
@@ -74,16 +71,18 @@ void serial_send_thread(int fd)
     while(go_running.load(std::memory_order_acquire))
     {
         auto start = steady_clock::now();
+        if(Get_Servo_turn())
+        {
+            serial_send(fd,reinterpret_cast<const CmdPacket*>(servo_cv_cmd),sizeof(servo_cv_cmd));
+
+        }
 
         if (auto_mode.load())
         {
             /* 自动模式：转发 OpenCV 检测帧 */
             uint8_t vf[MAX_PACKET_LEN];
             size_t vlen = 0;
-            /* 客户端断开优先于一切：立即补发一帧 LOST 停车，
-             * 而不是继续转发视觉帧（保证不依赖 STM32 端 1s 超时）。
-             * 注意判断顺序不能反：若先转发视觉帧，断连瞬间可能
-             * 漏掉 LOST，小车要多跑 1 秒 */
+           
             if (!client_alive.load())
             {
                 if (!lost_sent)
