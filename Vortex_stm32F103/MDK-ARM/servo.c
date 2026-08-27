@@ -2,21 +2,16 @@
 #include "tim.h"
 #include <math.h>
 
-/* ===== 舵机增量式 PID 控制 =====
- * 架构：0x04(SERVO_TURN) 帧携带目标像素坐标 (cx,cy) → STM32 内部定 goal(画面中心)
- *       增量式 PID 把像素误差 err=measure-goal 换算成角度偏移量(CCR) → 累加到绝对角度位置
- *       pre_X/Y_PWM 即"当前舵机绝对角度(CCR)"，每周期 +增量 得到新位置
- *
- * 时序：由 TIM4 20ms 中断驱动 (servo_turn==true 时调用 servo_method)
- */
 
-/* ——— 方向校正 ———
- * 机械约定：Pan 0°=最右 / 90°=中 / 180°=最左；Tilt 0°=朝天 / 90°=水平
- * 目标偏右(err>0) → Pan 需往右转 → 角度减小 → CCR 减小 → 增量取负
- */
 #define SERVO_X_REVERSE 1
 
-/* 目标点默认画面中心；PID 内部 err = measure - goal */
+
+#define SERVO_DEADZONE_HYSTERESIS_PX  20 //设置滞回区 20px 
+#define SERVO_APPROACH_ZONE_PX        50 //设置临近区 进行增量限幅 0.2°   
+#define SERVO_APPROACH_MAX_DIFF       0.2f
+#define SERVO_MAX_DIFF                2.0f
+
+// 目标点默认画面中心；PID 内部 err = measure - goal   640 * 480像素
 static Servo_Info servo_info = {
     .x_goal = SERVO_CENTER_PX_X,
     .y_goal = SERVO_CENTER_PX_Y,
@@ -28,38 +23,48 @@ static bool servo_turn = false;
 // 先不加Ki 纯PD控制 
 static float x_kp, x_ki, x_kd;
 static float x_last_err;
-static float x_v_err_sum;              /* 误差累积  绝对角度位置基准  */
+static float x_v_err_sum;              // 误差累积  计算绝对舵机角度位置  
 
 static float y_kp, y_ki, y_kd;
 static float y_last_err;
 static float y_v_err_sum;
 
-// ——— 舵机绝对角度位置（当前 CCR 值） 
-static int pre_X_PWM = SERVO_CENTER_CCR; /* 初始化为中位 90° */
-static int pre_Y_PWM = SERVO_CENTER_CCR;
+
+static float pre_X_PWM = SERVO_CENTER_CCR; //初始化为中位 90° 
+static float pre_Y_PWM = SERVO_CENTER_CCR;
+
+// 滞回状态判定 
+static bool x_in_deadzone = true;
+static bool y_in_deadzone = true;
 
 void Servo_PID_Init(void)
 {
-    /* 标定实测：24px/°（两轴一致）→ 1px ≈ 0.042 CCR
-     * kp：1px 误差单周期输出 0.05 CCR  0.042* 1.2 = 0.05 满补偿 
-     **/
-    x_kp = 0.05f;
+    // 标定实测：24px/°   1px ≈ 0.042 CCR
+    //* kp：0.03 → 补偿率 72%  
+    
+  //X PID  
+    x_kp = 0.005f;
     x_ki = 0.0f;
-    x_kd = 0.001f;
-    y_kp = 0.05f;
+    x_kd = 0.009f;
+  // Y PID
+    y_kp = 0.001f;
     y_ki = 0.0f;
-    y_kd = 0.001f;
+    y_kd = 0.026f;
 
     x_last_err = 0.0f;
     x_v_err_sum = 0.0f;
     y_last_err = 0.0f;
     y_v_err_sum = 0.0f;// 不再用I项 
 
-    /* 初始化位置复位到中位 90 */
+    /* 滞回状态复位：初始处于死区（停止） */
+    x_in_deadzone = true;
+    y_in_deadzone = true;
+
+    // 初始化位置复位到中位 90 
     pre_X_PWM = SERVO_CENTER_CCR;
     pre_Y_PWM = SERVO_CENTER_CCR;
-    X_PWM(pre_X_PWM);
-    Y_PWM(pre_Y_PWM);
+    X_PWM((int)(pre_X_PWM + 0.5f));// 四舍五入
+    Y_PWM((int)(pre_Y_PWM + 0.5f));
 }
 
 bool Get_Servo_turn(void)
@@ -80,7 +85,7 @@ void Servo_UpdateMeasure(int16_t x_px, int16_t y_px)
     servo_info.y_measure = (float)y_px;
     if (!servo_info.find)
     {
-        /* 首帧同步 D 项记忆：避免 last_err=0 导致第一拍 derr 巨大、舵机猛甩 */
+        /* Tagert 丢失  同步 D 项数据 */
         x_last_err = (float)x_px - servo_info.x_goal;
         y_last_err = (float)y_px - servo_info.y_goal;
     }
@@ -88,25 +93,25 @@ void Servo_UpdateMeasure(int16_t x_px, int16_t y_px)
 }
 
 // 测试/开环接口：mode.c 收到 0x05(SERVO_TEST) 帧后调用
-//   直接按角度(0~180)输出，不经过 PID，用于验证舵机方向/行程/限幅
+//   直接按角度(0~180)输出，不经过 PID   
 void Servo_SetAngle(uint8_t pan_angle, uint8_t tilt_angle)
 {
-    // 限幅：只接受 0~180
+    // 限幅
     if (pan_angle > 180)  pan_angle = 180;
     if (tilt_angle > 180) tilt_angle = 180;
 
-    // 角度 → CCR 线性映射：0°→50, 90°→150, 180°→250
+    // 角度 → CCR 线性映射：0° -> 50, 90° -> 150, 180° ->250
     pre_X_PWM = SERVO_MIN_CCR + (int)pan_angle  * (SERVO_MAX_CCR - SERVO_MIN_CCR) / 180;
     pre_Y_PWM = SERVO_MIN_CCR + (int)tilt_angle * (SERVO_MAX_CCR - SERVO_MIN_CCR) / 180;
 
-    X_PWM(pre_X_PWM);
-    Y_PWM(pre_Y_PWM);
+    X_PWM((int)(pre_X_PWM + 0.5f));
+    Y_PWM((int)(pre_Y_PWM + 0.5f));
 }
 
 
-/* 增量式 PID：返回本周期角度偏移量（单位 CCR 计数）
- *   out = kp*err + kd*derr/dt   （I 项未启用，先跑通再调）
- *   err 量纲为像素，kp 负责像素→角度增益 */
+/* 增量式 PID：返回本周期角度偏移量 CCR 
+ *   out = kp*err + kd*derr/dt   
+*/
 float X_Servo_PID_Compute(float x_measure, float x_goal, float dt)
 {
     float err = x_measure - x_goal;
@@ -132,46 +137,82 @@ float Y_Servo_PID_Compute(float y_measure, float y_goal, float dt)
 }
 
 
-/* 每 20ms：增量累加 → 绝对角度位置 → 限幅 → 输出 */
+//每20ms
 void servo_method(void)
 {
-    /* 从未收到目标帧：保持原位，不驱动 */
+    //未收到目标帧：保持原位，不驱动 
     if (!servo_info.find)
         return;
 
     float diff_X = X_Servo_PID_Compute(servo_info.x_measure, servo_info.x_goal, 0.020f);
     float diff_Y = Y_Servo_PID_Compute(servo_info.y_measure, servo_info.y_goal, 0.020f);
 
-    /* 死区：|err| < 阈值 视为已对准目标点 → 增量钳 0（PID 状态照常更新）
-     * 注意判断基于 err=measure-goal 而非 measure，goal 非 0 时依然正确 */
-    if (fabsf(servo_info.x_measure - servo_info.x_goal) < SERVO_CENTER_DEADZONE_PX) diff_X = 0.0f;
-    if (fabsf(servo_info.y_measure - servo_info.y_goal) < SERVO_CENTER_DEADZONE_PX) diff_Y = 0.0f;
+    float err_x = servo_info.x_measure - servo_info.x_goal;
+    float err_y = servo_info.y_measure - servo_info.y_goal;
+    float abs_err_x = fabsf(err_x);
+    float abs_err_y = fabsf(err_y);
 
-    /* 增量限幅：每 20ms 最多走 ±2 CCR(≈2°)，防止 PID 输出超过舵机物理能力的大甩动
-     * 舵机速度约 400°/s → 20ms 极限 ~8°；限 2° 让启动/逼近都平滑 */
-    if (diff_X > 2.0f)  diff_X = 2.0f;
-    if (diff_X < -2.0f) diff_X = -2.0f;
-    if (diff_Y > 2.0f)  diff_Y = 2.0f;
-    if (diff_Y < -2.0f) diff_Y = -2.0f;
+
+    if (x_in_deadzone)
+    {
+        if (abs_err_x >= SERVO_DEADZONE_HYSTERESIS_PX) x_in_deadzone = false;
+    }
+    else
+    {
+        if (abs_err_x < SERVO_CENTER_DEADZONE_PX) x_in_deadzone = true;
+    }
+    if (x_in_deadzone) diff_X = 0.0f;
+
+    if (y_in_deadzone)
+    {
+        if (abs_err_y >= SERVO_DEADZONE_HYSTERESIS_PX) y_in_deadzone = false;
+    }
+    else
+    {
+        if (abs_err_y < SERVO_CENTER_DEADZONE_PX) y_in_deadzone = true;
+    }
+    if (y_in_deadzone) diff_Y = 0.0f;
+
+    //  临近减速区(10 - 50px)增量限幅 
+    if (abs_err_x >= SERVO_CENTER_DEADZONE_PX && abs_err_x < SERVO_APPROACH_ZONE_PX)
+    {
+        if (diff_X >  SERVO_APPROACH_MAX_DIFF) diff_X =  SERVO_APPROACH_MAX_DIFF;
+        if (diff_X < -SERVO_APPROACH_MAX_DIFF) diff_X = -SERVO_APPROACH_MAX_DIFF;
+    }
+    // 远区(>50px)：正常 PID，保险限幅 2度 */
+    else if (abs_err_x >= SERVO_APPROACH_ZONE_PX)
+    {
+        if (diff_X >  SERVO_MAX_DIFF) diff_X =  SERVO_MAX_DIFF;
+        if (diff_X < -SERVO_MAX_DIFF) diff_X = -SERVO_MAX_DIFF;
+    }
+
+    if (abs_err_y >= SERVO_CENTER_DEADZONE_PX && abs_err_y < SERVO_APPROACH_ZONE_PX)
+    {
+        if (diff_Y >  SERVO_APPROACH_MAX_DIFF) diff_Y =  SERVO_APPROACH_MAX_DIFF;
+        if (diff_Y < -SERVO_APPROACH_MAX_DIFF) diff_Y = -SERVO_APPROACH_MAX_DIFF;
+    }
+    else if (abs_err_y >= SERVO_APPROACH_ZONE_PX)
+    {
+        if (diff_Y >  SERVO_MAX_DIFF) diff_Y =  SERVO_MAX_DIFF;
+        if (diff_Y < -SERVO_MAX_DIFF) diff_Y = -SERVO_MAX_DIFF;
+    }
 
 #if SERVO_X_REVERSE
     diff_X = -diff_X;
 #endif
+    
+    pre_X_PWM += diff_X;
 
-    /* X：水平 Pan (PB8 = TIM4_CH3) */
-    pre_X_PWM += (diff_X >= 0) ? (int)(diff_X + 0.5f) : (int)(diff_X - 0.5f);
+    pre_Y_PWM += diff_Y;
 
-    /* Y：竖直 Tilt (PB9 = TIM4_CH4) */
-    pre_Y_PWM += (diff_Y >= 0) ? (int)(diff_Y + 0.5f) : (int)(diff_Y - 0.5f);
-
-    /* 立即限幅位置状态：防止虚拟越界累计，避免误差反向时的回程延迟 */
+    /* 限幅输出 */
     if (pre_X_PWM < SERVO_MIN_CCR) pre_X_PWM = SERVO_MIN_CCR;
     if (pre_X_PWM > SERVO_MAX_CCR) pre_X_PWM = SERVO_MAX_CCR;
     if (pre_Y_PWM < SERVO_MIN_CCR) pre_Y_PWM = SERVO_MIN_CCR;
     if (pre_Y_PWM > SERVO_MAX_CCR) pre_Y_PWM = SERVO_MAX_CCR;
 
-    X_PWM(pre_X_PWM);
-    Y_PWM(pre_Y_PWM);
+    X_PWM((int)(pre_X_PWM + 0.5f));   /* 位置输出时才取整 */
+    Y_PWM((int)(pre_Y_PWM + 0.5f));
 }
 
 void X_PWM(int ccr)

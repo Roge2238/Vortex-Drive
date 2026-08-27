@@ -187,13 +187,13 @@ void frame_task(void)
             PID_Reset(&pid_right);
             PID_Reset(&pid_steer);
             PID_Reset(&pid_speed);
-            set_drive_pwm(0.0f, 0.0f);
+            set_drive_pwm(0.0f, 0.0f); 
             tmp_buf_cnt = 0;
             state = WAIT_AA;
         }
         else if(type == SERVO_TURN && tmp_buf_cnt == SERVO_LEN) 
         {
-            /* 0x04 帧：像素偏移量(小端 int16) → 更新舵机测量值 */
+            /* 0x04 帧：目标像素坐标(小端 int16) → 更新舵机测量值 */
             Servo_UpdateMeasure(
                 (int16_t)((uint16_t)tmp_buf[0] | ((uint16_t)tmp_buf[1] << 8)),
                 (int16_t)((uint16_t)tmp_buf[2] | ((uint16_t)tmp_buf[3] << 8)));
