@@ -18,6 +18,7 @@ set(SRC_FILES
     gst_task.cpp
     serial_task.cpp
     server.cpp
+    servo_cv.cpp
 )
 
 # 生成可执行程序

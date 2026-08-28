@@ -250,3 +250,75 @@ void assert_failed(uint8_t *file, uint32_t line)
 #endif
 
 
+/* ========== IWDG 独立看门狗（软件死机 → 硬件复位停车） ==========
+ * 原理：独立 LSI 时钟驱动的倒计数硬件。主循环周期性"喂狗"重装计数，
+ *       程序一卡死 → 没人喂狗 → 计数到 0 → 芯片硬件复位 → PWM 停止 → 小车停下。
+ *       （程序卡死时 TIM/PWM 外设仍在运行，没有看门狗电机会保持最后的
+ *         指令全速冲出，这是嵌入式小车最危险的事故类型）
+ *
+ * 为什么用 IWDG 而不是 WWDG：
+ *   IWDG 用 LSI(~40kHz 内部RC振荡器)，与 72MHz 主时钟完全独立，
+ *   主时钟停摆、晶振损坏它照常工作；WWDG 用主时钟，主时钟挂了它也瞎。
+ *   IWDG 一旦 0xCCCC 启动无法软件关闭（只能复位）——故意设计，
+ *   防止程序卡死后还能自己把看门狗关掉。
+ *
+ * 精度说明：LSI 精度只有 30~60kHz，1s 超时实际是 0.5~2s；
+ *           主循环一圈 <5ms，喂狗余量充足，Mode_switch 里的 HAL_Delay(25) 无影响。
+ *
+ * 调试注意：ST-Link 单步调试/断点暂停时 CPU 停了但看门狗还在倒数，
+ *           会把调试中的芯片复位。调试阶段可打开下方 DBGMCU 冻结位，
+ *           上线前务必删除（否则看门狗形同虚设）。
+ */
+
+ *
+ * main_test.c — 串级 PID 闭环控制 (外环视觉 + 内环速度)
+ * main 包含完整模式切换 手动遥控 视觉跟踪功能  可自选编译测试 
+ 
+ * 功能：接收 OpenCV 发来的 error(横向像素偏移) / area(面积差)，
+ *       外环视觉PID → 期望速度 → 内环速度PID → PWM
+ *
+ * 帧格式（上位机 → STM32）：
+ *   AUTO_TYPE: [0xAA] [0x02] [err_lo] [err_hi] [area_lo] [area_hi]
+     CMD_TYPE : [0xAA] [0x01] [cmd]
+     error: int16_t 小端  目标偏离画面中心的像素 (+右/-左, 范围±320)
+ *   area:  int16_t 小端  TARGET_AREA - actual_area (+太远/-太近)
+ *   LOST_TYPE: [0xAA] [0x03] ...  目标丢失，自动停车
+ *
+ * 控制结构：
+ *   外环 (20ms): cv.error → pid_steer → steer_out  (转向修正, 普通PID)
+ *                cv.area  → √|area| × K → speed_out (前进速度, 非线性映射)
+ 
+ *   内环 (20ms): target → 前馈 + pid_left/right → 增量斜坡 → PWM
+ *
+ * 硬件：
+ *   TIM1 (PA8/PA9)   左轮编码器    TIM2 (PA0-PA3)  4路PWM
+ *   TIM3 (PB4/PB5)   右轮编码器    TIM4           20ms中断
+ *   USART1 (PB6/PB7) 串口接收     USART3          VOFA 调试
+ */
+
+
+ 
+/*
+ * 前馈系数: 根据实测标定
+ * 实测: 总输出 63 PWM (90 + (-27)) → 稳态速度 57%
+ *       实际关系: 57% ≈ 63 PWM → 1% ≈ 1.1 PWM
+ * 保守取 1.5，让 PID 有 ±20 的修正空间
+ * 
+ * 标定方法: 改完烧录后看 VOFA，target=30 时:
+ *          - left/right_speed 应在 30±3
+ *          - left/right_pid 应在 ±10 以内 (不饱和)
+ *          如果 speed 偏高 → 调小 KV_FORWARD；偏低 → 调大
+ */
+
+ 
+  /*
+   * === 外环 PID (视觉→期望速度) ===
+   *   pid_steer: cv.error(像素) → 转向修正
+   *     kp=0.30: @50px → P=15, steer×0.3=4.5%差速 (原来需要100px)
+   *              @100px → P=30, steer×0.3=9.0%差速
+   *              @200px → P=60, steer×0.3=18.0%差速
+   *     ki=0.05: 快速积分，小误差持续时累积破摩擦力
+   *     kd=0.03: 转向阻尼，不变 (kp大了不需要额外加kd)
+   *
+   *   pid_speed: 不再使用 (被 sqrt 映射替代，保留初始化以备切换)
+   */

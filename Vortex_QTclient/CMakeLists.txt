@@ -32,6 +32,9 @@ qt_add_executable(Vortex_QTclient
     cmdclient.h cmdclient.cpp
 )
 
+# GUI 程序：不弹黑色控制台窗口（双击运行不再出现黑框）
+set_target_properties(Vortex_QTclient PROPERTIES WIN32_EXECUTABLE TRUE)
+
 target_include_directories(Vortex_QTclient PRIVATE
     ${GST_ROOT}/include
     ${GST_ROOT}/include/gstreamer-1.0
@@ -67,12 +70,70 @@ add_custom_command(TARGET Vortex_QTclient POST_BUILD
     COMMENT "复制 GStreamer DLL 到输出目录"
 )
 
-# ==== 新增：复制 GStreamer 插件目录 ====
+# ==== 复制 GStreamer 必要插件（白名单）====
+# 注意：不能拷贝全部插件！MSYS2 的 GStreamer 插件目录里，
+# fluidsynthmidi/wasapi/d3d11/kvsink 等设备类插件初始化时会枚举
+# 音频/显卡设备，在无设备或驱动异常的系统上会挂死导致程序卡在黑屏。
+# 本程序只需 UDP 视频流解码，白名单覆盖：udpsrc/rtpjitterbuffer/
+# rtph264depay/h264parse/avdec_h264/videoconvert/videoscale/appsink。
+set(GST_PLUGIN_DIR ${GST_ROOT}/lib/gstreamer-1.0)
+set(GST_PLUGIN_WHITELIST
+    ${GST_PLUGIN_DIR}/libgstapp.dll
+    ${GST_PLUGIN_DIR}/libgstudp.dll
+    ${GST_PLUGIN_DIR}/libgstrtpmanager.dll
+    ${GST_PLUGIN_DIR}/libgstrtp.dll
+    ${GST_PLUGIN_DIR}/libgstvideoparsersbad.dll
+    ${GST_PLUGIN_DIR}/libgstlibav.dll
+    ${GST_PLUGIN_DIR}/libgstvideoconvertscale.dll
+    ${GST_PLUGIN_DIR}/libgstvideotestsrc.dll
+    ${GST_PLUGIN_DIR}/libgstaudiotestsrc.dll
+    ${GST_PLUGIN_DIR}/libgstcoreelements.dll
+    ${GST_PLUGIN_DIR}/libgstcoretracers.dll
+)
 add_custom_command(TARGET Vortex_QTclient POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${GST_ROOT}/lib/gstreamer-1.0
-    $<TARGET_FILE_DIR:Vortex_QTclient>/lib/gstreamer-1.0
-    COMMENT "复制 GStreamer 插件到输出目录"
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Vortex_QTclient>/lib/gstreamer-1.0
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${GST_PLUGIN_WHITELIST}
+    $<TARGET_FILE_DIR:Vortex_QTclient>/lib/gstreamer-1.0/
+    COMMENT "复制 GStreamer 必要插件到输出目录"
+)
+
+# ==== 复制 Qt6 运行时 DLL（MSYS2 绿色版，qwindows 插件必需）====
+set(QT_DLLS
+    ${Qt6_ROOT}/bin/Qt6Core.dll
+    ${Qt6_ROOT}/bin/Qt6Gui.dll
+    ${Qt6_ROOT}/bin/Qt6Widgets.dll
+    ${Qt6_ROOT}/bin/Qt6Network.dll
+    ${Qt6_ROOT}/bin/Qt6OpenGL.dll
+    ${Qt6_ROOT}/bin/Qt6OpenGLWidgets.dll
+    ${Qt6_ROOT}/bin/Qt6Xml.dll
+    ${Qt6_ROOT}/bin/Qt6DBus.dll
+    ${Qt6_ROOT}/bin/Qt6Concurrent.dll
+)
+add_custom_command(TARGET Vortex_QTclient POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${QT_DLLS}
+    $<TARGET_FILE_DIR:Vortex_QTclient>
+    COMMENT "复制 Qt6 运行时 DLL 到输出目录"
+)
+
+# ==== 复制 Qt6 平台/样式/图片插件（缺 qwindows.dll 会启动即崩溃）====
+add_custom_command(TARGET Vortex_QTclient POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Vortex_QTclient>/platforms
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${Qt6_ROOT}/share/qt6/plugins/platforms/qwindows.dll
+    $<TARGET_FILE_DIR:Vortex_QTclient>/platforms/
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Vortex_QTclient>/styles
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${Qt6_ROOT}/share/qt6/plugins/styles/qmodernwindowsstyle.dll
+    $<TARGET_FILE_DIR:Vortex_QTclient>/styles/
+    COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:Vortex_QTclient>/imageformats
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    ${Qt6_ROOT}/share/qt6/plugins/imageformats/qgif.dll
+    ${Qt6_ROOT}/share/qt6/plugins/imageformats/qico.dll
+    ${Qt6_ROOT}/share/qt6/plugins/imageformats/qjpeg.dll
+    $<TARGET_FILE_DIR:Vortex_QTclient>/imageformats/
+    COMMENT "复制 Qt6 平台插件到输出目录"
 )
 
 # ==== 运行时提示 ====
@@ -88,12 +149,12 @@ qt_generate_deploy_app_script(
 )
 install(SCRIPT ${deploy_script})
 
-# ==== 打包 GStreamer DLL 与插件（绿色版必需）====
+# ==== 打包 GStreamer DLL 与必要插件（绿色版必需）====
 install(FILES ${GST_DLLS} DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY ${GST_ROOT}/lib/gstreamer-1.0 DESTINATION ${CMAKE_INSTALL_BINDIR}/lib)
+install(FILES ${GST_PLUGIN_WHITELIST} DESTINATION ${CMAKE_INSTALL_BINDIR}/lib/gstreamer-1.0)
 
 install(TARGETS Vortex_QTclient
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-)19
+)
