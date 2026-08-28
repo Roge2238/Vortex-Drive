@@ -11,7 +11,7 @@
 #define SERVO_LEN 4
 #define SERVO_TEST_LEN 2
 
-Mode_t last_mode = MODE_AUTO;
+Mode_t last_mode = MODE_AUTO;// 初始化为自动模式
 
 uint8_t tmp_buf[SIZE];
 int tmp_buf_cnt = 0;
@@ -24,6 +24,7 @@ extern PID_t pid_speed;
 extern float cur_left_pwm;
 extern float cur_right_pwm;
 
+RecvState state = WAIT_AA;
 
 //实现环形缓冲区 暂存消息 串口中断使用
 int8_t push_uart_buf(uint8_t data)
@@ -34,7 +35,7 @@ int8_t push_uart_buf(uint8_t data)
     return 0;
 }
 
-//实现环形缓冲区 取出消息
+// 取出消息
 int8_t get_uart_buf(uint8_t *data)
 {
     if(uart_buf.rw == uart_buf.rd) return -1;
@@ -89,9 +90,9 @@ void Mode_switch(void)
 void frame_task(void)
 {
     uint8_t tmp;
-    if(get_uart_buf(&tmp)) return;  /* 返回非0表示缓冲区空，无数据可处理 */
+    if(get_uart_buf(&tmp)) return;  
 
-    switch (state)
+    switch (state)// 经过 多方选择 采用状态机处理 
     {
     case WAIT_AA:
         if(tmp == MAGIC_HEAD)
@@ -134,7 +135,7 @@ void frame_task(void)
         {
             last_mode = mode;
             Mode_switch(); /* 切换模式 进行电机和缓冲区重置 */
-            state = WAIT_AA;
+            state = WAIT_AA; // 当前帧丢掉
             tmp_buf_cnt = 0;
             cv.error = 0;
             cv.area = 0;
@@ -146,8 +147,8 @@ void frame_task(void)
         break;
 
     case READ_DATA:
-        /* 防越界：丢弃整帧 */
-        if(tmp_buf_cnt >= SIZE)
+        
+        if(tmp_buf_cnt >= SIZE) // 不正常就丢 重置为WAIT_AA 等下一个
         {
             state = WAIT_AA;
             tmp_buf_cnt = 0;
@@ -158,7 +159,7 @@ void frame_task(void)
         if(type == CMD_TYPE && tmp_buf_cnt == CMD_LEN)
         {
             memcpy(cmd_buf, tmp_buf, CMD_LEN);
-            /* 将原始字节转换为命令状态 */
+           
             cmdState = (CmdState)build_keycode(cmd_buf);
             cmd_timeout_cnt = 0;  /* 收到新命令，重置超时计数 */
             tmp_buf_cnt = 0;
@@ -169,19 +170,19 @@ void frame_task(void)
             
             cv.error = (int16_t)((uint16_t)tmp_buf[0] | ((uint16_t)tmp_buf[1] << 8));
             cv.area  = (int16_t)((uint16_t)tmp_buf[2] | ((uint16_t)tmp_buf[3] << 8));
-            cv_active = 1;          /* 标记：已收到有效数据，PID可以开始跑 */
+            cv_active = 1;        //
             cmd_timeout_cnt = 0;    /* 重置超时计数 */
             tmp_buf_cnt = 0;
             state = WAIT_AA;
         }
         else if(type == LOST_TYPE && tmp_buf_cnt == AUTO_LEN)
         {
-            /* 目标丢失：清零 cv + 清PID积分 + 停车 */
+            // 目标丢失：清零 cv   清PID积分  停车 
             cv.error = 0;
             cv.area = 0;
-            cv_active = 0;          /* 关闭PID输出，TIM4中断会直接停车 */
-            cmd_timeout_cnt = 0;    /* 仍重置超时，因为串口链路正常 */
-            cur_left_pwm = 0.0f;    /* 斜坡状态清零：否则下一拍会用残留PWM重新驱动电机 */
+            cv_active = 0;         
+            cmd_timeout_cnt = 0;    
+            cur_left_pwm = 0.0f;   
             cur_right_pwm = 0.0f;
             PID_Reset(&pid_left);
             PID_Reset(&pid_right);
@@ -193,7 +194,7 @@ void frame_task(void)
         }
         else if(type == SERVO_TURN && tmp_buf_cnt == SERVO_LEN) 
         {
-            /* 0x04 帧：目标像素坐标(小端 int16) → 更新舵机测量值 */
+            
             Servo_UpdateMeasure(
                 (int16_t)((uint16_t)tmp_buf[0] | ((uint16_t)tmp_buf[1] << 8)),
                 (int16_t)((uint16_t)tmp_buf[2] | ((uint16_t)tmp_buf[3] << 8)));
@@ -203,7 +204,7 @@ void frame_task(void)
         }
         else if(type == SERVO_TEST && tmp_buf_cnt == SERVO_TEST_LEN)
         {
-            /* 0x05 帧：直接指定角度(0~180)，开环输出，不经过PID */
+            // 测试模式
             Servo_SetAngle(tmp_buf[0], tmp_buf[1]);
 
             tmp_buf_cnt = 0;

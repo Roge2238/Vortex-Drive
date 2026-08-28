@@ -49,7 +49,7 @@ typedef struct
 }CV_t;
 
 extern UartBuf_t uart_buf;
-extern RecvState state;
+
 extern uint8_t type;
 extern uint8_t cmd_buf[CMD_LEN];
 extern CV_t cv;
