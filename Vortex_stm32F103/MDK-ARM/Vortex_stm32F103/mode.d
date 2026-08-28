@@ -1,37 +1,25 @@
-vortex_stm32f103\mode.o: mode.c
-vortex_stm32f103\mode.o: mode.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
-vortex_stm32f103\mode.o: ../Core/Inc/stm32f1xx_hal_conf.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_def.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f1xx.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/stm32f103xb.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Include/core_cm3.h
-vortex_stm32f103\mode.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stdint.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Include/cmsis_version.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Include/cmsis_compiler.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Include/cmsis_armcc.h
-vortex_stm32f103\mode.o: ../Drivers/CMSIS/Device/ST/STM32F1xx/Include/system_stm32f1xx.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/Legacy/stm32_hal_legacy.h
-vortex_stm32f103\mode.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\stddef.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_rcc_ex.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_gpio_ex.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_exti.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_dma.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_dma_ex.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_cortex.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_flash.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_flash_ex.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_i2c.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_pwr.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_tim_ex.h
-vortex_stm32f103\mode.o: ../Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal_uart.h
-vortex_stm32f103\mode.o: cmd.h
-vortex_stm32f103\mode.o: ../Core/Inc/tim.h
-vortex_stm32f103\mode.o: ../Core/Inc/main.h
-vortex_stm32f103\mode.o: pid.h
-vortex_stm32f103\mode.o: motor.h
-vortex_stm32f103\mode.o: D:\Keil_v5\ARM\ARMCC\Bin\..\include\string.h
+vortex_stm32f103/mode.o: mode.c mode.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal.h \
+  ..\Core\Inc\stm32f1xx_hal_conf.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_rcc.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_def.h \
+  ..\Drivers\CMSIS\Device\ST\STM32F1xx\Include\stm32f1xx.h \
+  ..\Drivers\CMSIS\Device\ST\STM32F1xx\Include\stm32f103xb.h \
+  ..\Drivers\CMSIS\Include\core_cm3.h \
+  ..\Drivers\CMSIS\Device\ST\STM32F1xx\Include\system_stm32f1xx.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\Legacy\stm32_hal_legacy.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_rcc_ex.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_gpio.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_gpio_ex.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_exti.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_dma.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_dma_ex.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_cortex.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_flash.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_flash_ex.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_i2c.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_pwr.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_tim.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_tim_ex.h \
+  ..\Drivers\STM32F1xx_HAL_Driver\Inc\stm32f1xx_hal_uart.h cmd.h \
+  ..\Core\Inc\tim.h ..\Core\Inc\main.h pid.h motor.h servo.h
