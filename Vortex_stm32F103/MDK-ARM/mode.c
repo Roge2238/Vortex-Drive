@@ -17,12 +17,6 @@ uint8_t tmp_buf[SIZE];
 int tmp_buf_cnt = 0;
 
 extern volatile CmdState cmdState;
-extern PID_t pid_left;
-extern PID_t pid_right;
-extern PID_t pid_steer;
-extern PID_t pid_speed;
-extern float cur_left_pwm;
-extern float cur_right_pwm;
 
 RecvState state = WAIT_AA;
 
@@ -77,12 +71,7 @@ void Mode_switch(void)
     /* 清残留控制状态，防止切回后第一拍用旧值驱动电机 */
     cmdState = CMD_EMPTY;
     cv_active = 0;
-    cur_left_pwm = 0.0f;
-    cur_right_pwm = 0.0f;
-    PID_Reset(&pid_left);
-    PID_Reset(&pid_right);
-    PID_Reset(&pid_steer);
-    PID_Reset(&pid_speed);
+    Drive_Reset();
     HAL_Delay(25);
 }
 
@@ -182,12 +171,7 @@ void frame_task(void)
             cv.area = 0;
             cv_active = 0;         
             cmd_timeout_cnt = 0;    
-            cur_left_pwm = 0.0f;   
-            cur_right_pwm = 0.0f;
-            PID_Reset(&pid_left);
-            PID_Reset(&pid_right);
-            PID_Reset(&pid_steer);
-            PID_Reset(&pid_speed);
+            Drive_Reset();
             set_drive_pwm(0.0f, 0.0f); 
             tmp_buf_cnt = 0;
             state = WAIT_AA;
