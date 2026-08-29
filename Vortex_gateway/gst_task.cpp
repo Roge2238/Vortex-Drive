@@ -155,6 +155,19 @@ void detect(cv::Mat& img, FilterState& st, int& out_err, int& out_area, bool& ou
             float rad = 0.0f;
             cv::minEnclosingCircle(*best, c, rad);
             cv::circle(img, cv::Point(c), static_cast<int>(rad), cv::Scalar(255, 0, 0), 1);
+
+            // 面积 HUD：目标 / 实际 / 误差（误差与串口 0x02 帧下发值一致）
+            const cv::Scalar kHudColor(0, 255, 255);
+            char line[64];
+            int y = 30;
+            std::snprintf(line, sizeof(line), "Target Area: %d", kTargetArea);
+            cv::putText(img, line, cv::Point(10, y), cv::FONT_HERSHEY_SIMPLEX, 0.6, kHudColor, 2);
+            y += 25;
+            std::snprintf(line, sizeof(line), "Actual Area: %d", static_cast<int>(area));
+            cv::putText(img, line, cv::Point(10, y), cv::FONT_HERSHEY_SIMPLEX, 0.6, kHudColor, 2);
+            y += 25;
+            std::snprintf(line, sizeof(line), "Err Area: %+d", st.hold_error_area);
+            cv::putText(img, line, cv::Point(10, y), cv::FONT_HERSHEY_SIMPLEX, 0.6, kHudColor, 2);
         }
     }
     else
